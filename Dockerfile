@@ -3,7 +3,7 @@ FROM archlinux:latest
 # 1. Enable 32-bit Multilib Repositories
 RUN echo -e "\n[multilib]\nInclude = /etc/pacman.d/mirrorlist" >> /etc/pacman.conf
 
-# 2. Base Bootstrap (Now including Xvfb, Wget, and xterm)
+# 2. Base Bootstrap 
 RUN pacman -Syu --noconfirm && \
     pacman -S --noconfirm \
     base-devel \
@@ -16,6 +16,7 @@ RUN pacman -Syu --noconfirm && \
     xorg-xinit \
     xorg-xrandr \
     wmctrl \
+    sunshine \
     # Audio stack
     pulseaudio \
     lib32-pulseaudio \

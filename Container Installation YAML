@@ -1,6 +1,5 @@
 services:
   steamos:
-    # Remember to change 'PHOTOSBYAKIL' if your GitHub username is different
     image: ghcr.io/photosbyakil/truenas_steamos:main
     container_name: steamos-app
     network_mode: host

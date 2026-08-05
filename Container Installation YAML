@@ -1,21 +1,18 @@
 services:
   steamos:
-    build: .
-    image: steamos-auto-update:latest
+    # Remember to change 'PHOTOSBYAKIL' if your GitHub username is different
+    image: ghcr.io/PHOTOSBYAKIL/TrueNAS_SteamOS:main
     container_name: steamos-app
     network_mode: host
     environment:
-      - DISPLAY=:0
       - PULSE_SERVER=unix:/tmp/pulseaudio.socket
     devices:
-      - /dev/dri:/dev/dri      # Pass GPU hardware acceleration
-      - /dev/input:/dev/input  # Pass USB/Bluetooth controllers
+      - /dev/dri:/dev/dri 
+      - /dev/input:/dev/input
+      # Required for Sunshine to emulate your Moonlight controller inside Arch Linux
+      - /dev/uinput:/dev/uinput
     volumes:
-      - /tmp/.X11-unix:/tmp/.X11-unix:rw
-      # Persist Steam library, configs, and downloaded games across updates
       - /mnt/storage/apps/steamos/home:/home/steam
-      # Persist Pacman package database to make startup updates fast
-      - /mnt/storage/apps/steamos/pacman_db:/var/lib/pacman
     ipc: host
     privileged: true
     restart: unless-stopped

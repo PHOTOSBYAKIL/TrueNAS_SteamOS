@@ -1,9 +1,10 @@
 FROM archlinux:latest
 
-# 1. Enable 32-bit Multilib Repositories
-RUN echo -e "\n[multilib]\nInclude = /etc/pacman.d/mirrorlist" >> /etc/pacman.conf
+# 1. Enable 32-bit Multilib Repositories & LizardByte Custom Repository
+RUN echo -e "\n[multilib]\nInclude = /etc/pacman.d/mirrorlist" >> /etc/pacman.conf && \
+    echo -e "\n[lizardbyte]\nSigLevel = Optional\nServer = https://github.com/LizardByte/pacman-repo/releases/latest/download" >> /etc/pacman.conf
 
-# 2. Base Bootstrap (Includes xterm for Steam setup and sunshine for streaming)
+# 2. Base Bootstrap (Pacman can now find sunshine!)
 RUN pacman -Syu --noconfirm && \
     pacman -S --noconfirm \
     base-devel \

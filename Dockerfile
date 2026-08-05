@@ -3,13 +3,14 @@ FROM archlinux:latest
 # 1. Enable 32-bit Multilib Repositories
 RUN echo -e "\n[multilib]\nInclude = /etc/pacman.d/mirrorlist" >> /etc/pacman.conf
 
-# 2. Base Bootstrap (Now including Xvfb and Wget)
+# 2. Base Bootstrap (Now including Xvfb, Wget, and xterm)
 RUN pacman -Syu --noconfirm && \
     pacman -S --noconfirm \
     base-devel \
     sudo \
     wget \
     ttf-liberation \
+    xterm \
     xorg-server \
     xorg-server-xvfb \
     xorg-xinit \

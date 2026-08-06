@@ -54,6 +54,26 @@ xrandr --newmode 1920x1080_60.00 173.00 1920 2048 2248 2576 1080 1083 1088 1120 
 xrandr --addmode DUMMY0 1920x1080_60.00 2>/dev/null
 xrandr --output DUMMY0 --mode 1920x1080_60.00 2>/dev/null || true
 
+# Window manager so Steam's Big Picture fills the screen (bare X has no WM).
+matchbox-window-manager >/dev/null 2>&1 &
+
+# Input hotplug helper. Sunshine 2026.x creates its virtual keyboard/mouse on
+# every client connect. Those new /dev/input/event* nodes are not world-readable,
+# so Xorg's libinput fails to open them. Watch for new devices, chmod them, and
+# re-trigger udev so Xorg attaches them.
+(
+  last=$(ls /dev/input/event* 2>/dev/null | wc -l)
+  while true; do
+    sleep 2
+    now=$(ls /dev/input/event* 2>/dev/null | wc -l)
+    if [ "$now" != "$last" ]; then
+      sudo chmod 666 /dev/input/event* 2>/dev/null || true
+      sudo udevadm trigger --subsystem-match=input 2>/dev/null || true
+      last=$now
+    fi
+  done
+) &
+
 echo "=== [SteamOS Container] Seeding Sunshine config ==="
 # Prevent Sunshine's "CSRF Protection Error" on the welcome page: seed the
 # config with this host's real origin. NOTE: csrf_allowed_origins is a

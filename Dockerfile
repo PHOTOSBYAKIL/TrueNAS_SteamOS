@@ -59,6 +59,7 @@ RUN pacman -Syu --noconfirm && \
     networkmanager \
     xf86-video-dummy \
     xf86-input-libinput \
+    matchbox-window-manager \
     && pacman -Scc --noconfirm
 
 # 3. Create non-root user 'steam'

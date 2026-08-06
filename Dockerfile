@@ -1,3 +1,24 @@
+# ============================================================================
+# TrueNAS_SteamOS
+#
+# An Arch Linux, SteamOS-style container for TrueNAS with current graphics
+# drivers. Arch ships the latest Mesa (>= 25.2.1) which SteamVR's Steam Link
+# headset driver requires for Quest VR.
+#
+# The image is built automatically from this repo and published to:
+#   ghcr.io/photosbyakil/truenas_steamos:main
+#
+# IMPORTANT — DO NOT run this container alongside any OTHER Sunshine host
+# (including Wolf / Games on Whales, or a second SteamOS instance) on the same
+# machine. Sunshine and Wolf are both Moonlight streaming servers and claim the
+# same ports (47984/47989 TCP and 47999/48010/48100/48200 UDP), so one of them
+# will fail to start ("Address already in use").
+#   - Run this box INSTEAD of Wolf, or
+#   - Run it on a separate machine/NAS, or
+#   - If you really must run both, stop Wolf (or change Sunshine's ports) first.
+#
+# See README.md and "Container Installation YAML" for TrueNAS setup.
+# ============================================================================
 FROM archlinux:latest
 
 # 1. Enable 32-bit Multilib Repositories & LizardByte Custom Repository
@@ -11,6 +32,7 @@ RUN pacman -Syu --noconfirm && \
     sudo \
     wget \
     ttf-liberation \
+    ttf-dejavu \
     xterm \
     xorg-server \
     xorg-server-xvfb \

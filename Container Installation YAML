@@ -17,8 +17,8 @@ services:
       - /dev/bus/usb:/dev/bus/usb
     volumes:
       # Steam home + library lives here. Use a pool path that exists on your
-      # TrueNAS (example uses HDD_1TB) and make sure it is writable.
-      - /mnt/HDD_1TB/apps/steamos/home:/home/steam
+      # TrueNAS (a fast SSD pool is recommended). Example uses GAMING_1TB_SSD.
+      - /mnt/GAMING_1TB_SSD/apps/steamos/home:/home/steam
       # Required so Xorg can attach Sunshine's virtual input devices (uinput)
       # to the display — without this, mouse/keyboard/gamepad won't reach Steam.
       - /run/udev:/run/udev:rw

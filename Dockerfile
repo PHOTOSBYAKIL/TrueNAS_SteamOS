@@ -58,6 +58,7 @@ RUN pacman -Syu --noconfirm && \
     dbus \
     networkmanager \
     xf86-video-dummy \
+    xf86-video-amdgpu \
     xf86-input-libinput \
     openbox \
     && pacman -Scc --noconfirm

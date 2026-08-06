@@ -39,6 +39,25 @@ First start takes a couple of minutes (Steam downloads/updates itself).
   app on the Quest and connect to the Steam client here — the current Mesa
   passes SteamVR's driver check.
 
+### Controller pass-through (VirtualHere)
+
+Controllers plugged into the Moonlight client (e.g. your Mac) can appear as real
+USB devices inside this container — Steam and Linux then recognize the actual
+controller model.
+
+1. On the **Mac** (the Moonlight client): download and run **VirtualHere**
+   from https://www.virtualhere.com/usb_client_software (macOS build). Share the
+   Mac's USB devices (the app exposes a "share" option).
+2. In the container, the VirtualHere client runs automatically if `VH_SERVER` is
+   set (the YAML sets it to the Mac's IP). It connects to the Mac's VirtualHere
+   on port 7575 and creates the virtual USB devices via the host's `vhci_hcd`
+   kernel module (already present on TrueNAS).
+3. Steam Input picks the controllers up; enable them under
+   Settings → Controllers.
+
+Note: the VirtualHere **server** needs a license to share more than one device
+at a time (free = 1 device).
+
 ### Important
 
 * **Do not run this alongside Wolf (Games on Whales) on the same host.**

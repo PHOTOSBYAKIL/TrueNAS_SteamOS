@@ -13,6 +13,14 @@ sudo chmod 0700 "$XDG_RUNTIME_DIR" 2>/dev/null || true
 # The mounted HOME may have been created as root — make it writable
 sudo chown -R "$(id -u):$(id -g)" "$HOME" 2>/dev/null || true
 
+echo "=== [SteamOS Container] Starting system services (D-Bus + NetworkManager) ==="
+# Steam reports "waiting for network" if it cannot reach NetworkManager's D-Bus
+# API. Start the system bus + NetworkManager (requires root; steam has NOPASSWD sudo).
+sudo dbus-uuidgen --ensure 2>/dev/null || true
+sudo mkdir -p /run/dbus
+sudo dbus-daemon --system --fork
+sudo NetworkManager
+
 echo "=== [SteamOS Container] Starting PulseAudio ==="
 export PULSE_SERVER=unix:/tmp/pulseaudio.socket
 pulseaudio --start --exit-idle-time=-1 \

@@ -55,6 +55,8 @@ RUN pacman -Syu --noconfirm && \
     lib32-systemd \
     usbutils \
     steam \
+    dbus \
+    networkmanager \
     && pacman -Scc --noconfirm
 
 # 3. Create non-root user 'steam'

@@ -124,7 +124,7 @@ echo "=== [SteamOS Container] Launching SteamOS Big Picture Mode ==="
   while true; do
     if ! pgrep -x steam >/dev/null 2>&1; then
       echo "[SteamOS] Starting Steam..."
-      steam -gamepadui -steamos -silent >/dev/null 2>&1 &
+      dbus-run-session -- steam -gamepadui -steamos -silent >/dev/null 2>&1 &
       gamepad_seen=0
       sleep 15
     fi

@@ -65,7 +65,7 @@ openbox >/dev/null 2>&1 &
 (
   while true; do
     sleep 2
-    devs=$(awk -v RS='' '/passthrough|Sunshine/ { for(i=1;i<=NF;i++){ if($i ~ /^event[0-9]+$/ || $i ~ /^js[0-9]+$/) print $i } }' /proc/bus/input/devices 2>/dev/null | sort -u)
+    devs=$(awk -v RS='' '/passthrough|Sunshine/ { for(i=1;i<=NF;i++){ if($i ~ /event[0-9]+/){ sub(/.*event/,"event",$i); if($i ~ /^event[0-9]+$/) print $i } if($i ~ /js[0-9]+/){ sub(/.*js/,"js",$i); if($i ~ /^js[0-9]+$/) print $i } } }' /proc/bus/input/devices 2>/dev/null | sort -u)
     [ -z "$devs" ] && continue
     created=0
     for dev in $devs; do

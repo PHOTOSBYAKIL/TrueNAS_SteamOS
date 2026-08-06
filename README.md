@@ -24,7 +24,7 @@ managed from the TrueNAS Apps UI like any other app.
 2. Give it a name (e.g. `steamos`).
 3. Paste the compose YAML from the **`Container Installation YAML`** file.
 4. Adjust the volume path to a pool that exists on your TrueNAS, e.g.
-   `/mnt/HDD_1TB/apps/steamos/home` (or use **Add** to mount a dataset).
+   `/mnt/GAMING_1TB_SSD/apps/steamos/home` (a fast SSD pool is recommended).
 5. Leave `privileged` and the devices as-is (GPU, input, uinput).
 6. **Install**.
 

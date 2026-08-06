@@ -129,7 +129,7 @@ echo "=== [SteamOS Container] Input hotplug helper ==="
       sudo chmod 666 "/dev/input/$dev" 2>/dev/null || true
     done
     if [ "$created" = "1" ]; then
-      sudo udevadm trigger --subsystem-match=input 2>/dev/null || true
+      sudo udevadm trigger --action=add --subsystem-match=input 2>/dev/null || true
     fi
   done
 ) &
@@ -140,7 +140,7 @@ sudo -u "$USER_NAME" env XDG_RUNTIME_DIR="$XDG_RUNTIME_DIR" HOME="$HOME" \
   DBUS_SESSION_BUS_ADDRESS="$DBUS_SESSION_BUS_ADDRESS" \
   PIPEWIRE_RUNTIME_DIR="$XDG_RUNTIME_DIR/pipewire" \
   STEAM_USE_DYNAMIC_VK=1 \
-  dbus-run-session -- steam -gamepadui -steamos -silent "$@" >/tmp/steam.log 2>&1
+  dbus-run-session -- steam -tenfoot -silent "$@" >/tmp/steam.log 2>&1
 
 echo "=== [SteamOS Container] Steam exited — stopping container ==="
 exit 0

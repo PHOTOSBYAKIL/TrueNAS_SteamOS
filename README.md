@@ -10,10 +10,11 @@ The image is built automatically from this repo and published to
 
 ## What it does
 
-* Runs **Steam** (Big Picture / `-steamos`) inside a headless **sway (Wayland)** session.
+* Runs **Steam** (Big Picture, `-tenfoot`) inside a headless **sway (Wayland)** session.
 * Runs **Sunshine**, so any Moonlight client can stream the display (games, desktop).
-* Runs **PulseAudio**, so game audio works over the stream.
+* Runs **PipeWire** audio, so game audio works over the stream.
 * Provides the GPU (AMD/Intel) + current Mesa to Steam, including 32-bit support.
+* Every window is forced **fullscreen** in sway, so games open on top of Steam.
 
 ## Install on TrueNAS (manual — appears in your Apps list)
 
@@ -69,6 +70,12 @@ at a time (free = 1 device).
 
 ### Troubleshooting
 
+* **Mouse / keyboard / controller not working** — the entrypoint auto-creates
+  Sunshine's virtual input device nodes in the container (Wolf's mknod
+  technique) and re-triggers udev with `--action=add` so sway's libinput
+  attaches them. If input stops, reconnect Moonlight (a fresh session recreates
+  the devices); the trigger only fires when a new device appears.
+
 * **Proton / Windows games crash at launch** — the box now uses a headless
   **sway (Wayland)** compositor, which lets games present directly to the GPU
   (no DRI3/X11 requirement). This requires the host kernel parameter
@@ -96,8 +103,8 @@ at a time (free = 1 device).
   (Wolf, a second SteamOS instance) is running on the same machine. See the
   Wolf note above.
 
-* **No audio in streams** — confirm PulseAudio is running in the container
-  (`pgrep pulseaudio` inside the app shell) and that the streamed app is not
+* **No audio in streams** — confirm PipeWire is running in the container
+  (`pgrep pipewire` inside the app shell) and that the streamed app is not
   muting the monitor device.
 
 * **Sunshine shows no apps / blank "Apps" page** — `apps.json` is generated on

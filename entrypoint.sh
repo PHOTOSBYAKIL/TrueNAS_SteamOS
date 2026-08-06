@@ -102,38 +102,6 @@ EOF
   echo "Wrote Sunshine config for origin https://${LAN_IP}:47990"
 fi
 
-# Seed apps.json so "Steam Big Picture" runs Steam in the FOREGROUND. When
-# Steam exits, the prep-cmd process ends, Sunshine ends the stream, and the
-# Moonlight client returns to its app homepage.
-APPS="$HOME/.config/sunshine/apps.json"
-if [ ! -f "$APPS" ] || ! grep -q "dbus-run-session -- steam" "$APPS"; then
-  mkdir -p "$(dirname "$APPS")"
-  cat > "$APPS" <<'EOF'
-{
-    "env": {
-        "PATH": "$(PATH):$(HOME)/.local/bin"
-    },
-    "apps": [
-        {
-            "name": "Desktop",
-            "image-path": "desktop.png"
-        },
-        {
-            "name": "Steam Big Picture",
-            "prep-cmd": [
-                {
-                    "do": "dbus-run-session -- steam -gamepadui -steamos -silent",
-                    "undo": ""
-                }
-            ],
-            "image-path": "steam.png"
-        }
-    ]
-}
-EOF
-  echo "Wrote Sunshine apps.json (Steam as foreground app)"
-fi
-
 echo "=== [SteamOS Container] Starting Sunshine ==="
 # Launch Sunshine in the background to capture Display :99
 sunshine &
@@ -146,8 +114,7 @@ if [ -n "${VH_SERVER:-}" ]; then
   echo "VirtualHere client connecting to ${VH_SERVER}"
 fi
 
-echo "=== [SteamOS Container] Ready ==="
-# Steam is launched by Sunshine as the "Steam Big Picture" app (see apps.json),
-# so quitting Steam ends the stream and Moonlight returns to its homepage.
-# Keep the container (Sunshine) alive as PID1.
-exec sleep infinity
+echo "=== [SteamOS Container] Launching SteamOS Big Picture Mode ==="
+# Run Steam as PID1. When Steam exits the container stops (Sunshine dies with
+# it), so the Moonlight client returns to its homepage.
+exec dbus-run-session -- steam -gamepadui -steamos -silent "$@"

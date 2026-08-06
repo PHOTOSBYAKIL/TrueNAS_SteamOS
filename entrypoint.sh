@@ -55,7 +55,7 @@ xrandr --addmode DUMMY0 1920x1080_60.00 2>/dev/null
 xrandr --output DUMMY0 --mode 1920x1080_60.00 2>/dev/null || true
 
 # Window manager so Steam's Big Picture fills the screen (bare X has no WM).
-matchbox-window-manager >/dev/null 2>&1 &
+openbox >/dev/null 2>&1 &
 
 # Input hotplug helper. Sunshine 2026.x creates its virtual keyboard/mouse on
 # every client connect. Those new /dev/input/event* nodes are not world-readable,

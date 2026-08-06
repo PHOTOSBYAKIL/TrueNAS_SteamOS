@@ -51,6 +51,11 @@ sudo -u "$USER_NAME" env XDG_RUNTIME_DIR="$XDG_RUNTIME_DIR" HOME="$HOME" \
   PIPEWIRE_RUNTIME_DIR="$XDG_RUNTIME_DIR/pipewire" \
   pipewire-pulse >/tmp/pipewire-pulse.log 2>&1 &
 sleep 1
+sudo -u "$USER_NAME" env XDG_RUNTIME_DIR="$XDG_RUNTIME_DIR" HOME="$HOME" \
+  DBUS_SESSION_BUS_ADDRESS="$DBUS_SESSION_BUS_ADDRESS" \
+  PIPEWIRE_RUNTIME_DIR="$XDG_RUNTIME_DIR/pipewire" \
+  wireplumber >/tmp/wireplumber.log 2>&1 &
+sleep 2
 
 echo "=== [SteamOS Container] Starting seatd ==="
 sudo seatd -g video >/tmp/seatd.log 2>&1 &

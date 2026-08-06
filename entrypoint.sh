@@ -34,13 +34,16 @@ export PULSE_SERVER=unix:/tmp/pulseaudio.socket
 pulseaudio --daemonize=no --exit-idle-time=-1 \
   --load="module-native-protocol-unix socket=/tmp/pulseaudio.socket" >/dev/null 2>&1 &
 
-echo "=== [SteamOS Container] Starting Virtual Display (Xvfb) ==="
-# Create a 1080p 60Hz virtual monitor on display port :99
-Xvfb :99 -screen 0 1920x1080x24 -nolisten tcp -dpi 96 +extension RANDR &
+echo "=== [SteamOS Container] Starting Virtual Display (Xorg dummy) ==="
+# A real Xorg server with the dummy video driver. Sunshine 2026.x injects input
+# through uinput/inputtino virtual devices; Xorg (with /run/udev mounted) picks
+# those up and attaches them to the display. Xvfb cannot process evdev input.
+sudo Xorg :99 -ac -nolisten tcp -noreset -config /etc/X11/xorg-headless.conf \
+  >/dev/null 2>&1 &
 export DISPLAY=:99
 
 # Wait until the X server accepts connections before starting Sunshine
-for i in $(seq 1 30); do
+for i in $(seq 1 60); do
   [ -S /tmp/.X11-unix/X99 ] && break
   sleep 0.5
 done

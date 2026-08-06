@@ -57,6 +57,8 @@ RUN pacman -Syu --noconfirm && \
     steam \
     dbus \
     networkmanager \
+    xf86-video-dummy \
+    xf86-input-libinput \
     && pacman -Scc --noconfirm
 
 # 3. Create non-root user 'steam'
@@ -73,6 +75,11 @@ RUN usermod -aG video,audio,input ${USER}
 # 4. Copy Startup Script & Set Permissions
 COPY --chown=steam:steam entrypoint.sh /usr/local/bin/entrypoint.sh
 RUN chmod +x /usr/local/bin/entrypoint.sh
+
+# Headless X server config (xf86-video-dummy) — Sunshine 2026.x injects input
+# via uinput/inputtino devices, which a real Xorg server (via udev) attaches to
+# the display. Xvfb does NOT process evdev input, so input would not work.
+COPY xorg-headless.conf /etc/X11/xorg-headless.conf
 
 USER ${USER}
 WORKDIR ${HOME}

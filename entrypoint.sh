@@ -40,6 +40,35 @@ sudo chmod 666 /dev/uinput 2>/dev/null || true
 sudo chmod 666 /dev/dri/* 2>/dev/null || true
 sudo chmod 666 /dev/input/* 2>/dev/null || true
 
+echo "=== [SteamOS Container] Configuring PipeWire null sink ==="
+# Deterministic audio: a null sink that Steam/games output to and Sunshine
+# captures the monitor of. Created at PipeWire startup via a config drop-in.
+mkdir -p "$HOME/.config/pipewire/pipewire.conf.d"
+cat > "$HOME/.config/pipewire/pipewire.conf.d/10-sunshine-null.conf" <<'PWEOF'
+context.modules = [
+    {
+        name = libpipewire-module-loopback
+        args = {
+            "capture.props" = {
+                "node.name" = "sunshine-null"
+                "media.class" = "Audio/Sink"
+                "audio.position" = [ "FL" "FR" ]
+                "node.description" = "Sunshine Null Sink"
+                "monitor.channel-volumes" = true
+            }
+            "playback.props" = {
+                "node.name" = "sunshine-null-monitor"
+                "media.class" = "Audio/Source"
+                "audio.position" = [ "FL" "FR" ]
+                "node.description" = "Sunshine Monitor"
+                "monitor.channel-volumes" = true
+            }
+        }
+    }
+]
+PWEOF
+chown -R "${PUID}:${PGID}" "$HOME/.config/pipewire" 2>/dev/null || true
+
 echo "=== [SteamOS Container] Starting PipeWire ==="
 sudo -u "$USER_NAME" env XDG_RUNTIME_DIR="$XDG_RUNTIME_DIR" HOME="$HOME" \
   DBUS_SESSION_BUS_ADDRESS="$DBUS_SESSION_BUS_ADDRESS" \
@@ -56,6 +85,11 @@ sudo -u "$USER_NAME" env XDG_RUNTIME_DIR="$XDG_RUNTIME_DIR" HOME="$HOME" \
   PIPEWIRE_RUNTIME_DIR="$XDG_RUNTIME_DIR/pipewire" \
   wireplumber >/tmp/wireplumber.log 2>&1 &
 sleep 2
+
+# Steam/games output to the null sink; Sunshine captures its monitor.
+sudo -u "$USER_NAME" env XDG_RUNTIME_DIR="$XDG_RUNTIME_DIR" HOME="$HOME" \
+  PULSE_SERVER=unix:"$XDG_RUNTIME_DIR"/pulse/native \
+  pactl set-default-sink sunshine-null 2>/dev/null || true
 
 echo "=== [SteamOS Container] Starting seatd ==="
 sudo seatd -g video >/tmp/seatd.log 2>&1 &
@@ -99,6 +133,7 @@ csrf_allowed_origins = https://${LAN_IP}:47990
 capture = wlr
 encoder = vaapi
 adapter_name = /dev/dri/renderD128
+audio_sink = sunshine-null
 EOF
   echo "Wrote Sunshine config (wlr capture, CSRF origin https://${LAN_IP}:47990)"
 fi

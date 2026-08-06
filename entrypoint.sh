@@ -146,7 +146,11 @@ sudo -u "$USER_NAME" env XDG_RUNTIME_DIR="$XDG_RUNTIME_DIR" HOME="$HOME" \
 
 echo "=== [SteamOS Container] Starting VirtualHere USB client ==="
 if [ -n "${VH_SERVER:-}" ]; then
-  /usr/local/bin/vhclient -n -t "$VH_SERVER" >/dev/null 2>&1 &
+  # Start the daemon first, then tell it to connect to the server (the
+  # combined -n -t form fails because the IPC daemon must be up).
+  /usr/local/bin/vhclient -n >/dev/null 2>&1 &
+  sleep 2
+  /usr/local/bin/vhclient -t "$VH_SERVER" >/dev/null 2>&1 || true
   echo "VirtualHere client connecting to ${VH_SERVER}"
 fi
 

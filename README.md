@@ -48,6 +48,35 @@ First start takes a couple of minutes (Steam downloads/updates itself).
 * **Storage:** the mounted `/home/steam` volume holds the Steam client, config
   and library. Give it a pool with enough space for your games.
 
+### Troubleshooting
+
+* **"CSRF Protection Error" / "Internal Server Error" on the Sunshine welcome
+  page** — the entrypoint auto-seeds `sunshine.conf` with your host's real
+  origin, but if you changed your IP or edited the config, fix it manually:
+
+  1. Edit `<your-volume>/home/.config/sunshine/sunshine.conf` and set:
+     ```
+     origin_web_ui_allowed = ["*"]
+     csrf_allowed_origins = ["https://<your-nas-ip>:47990"]
+     ```
+  2. Restart the app (Apps → steamos → Restart).
+
+  Note: `csrf_allowed_origins` does **not** accept a wildcard (`["*"]`) —
+  Sunshine rejects it with `Invalid 'csrf_allowed_origins' entry rejected`.
+  It needs the exact origin you open in the browser.
+
+* **"Address already in use" when Sunshine starts** — another Sunshine host
+  (Wolf, a second SteamOS instance) is running on the same machine. See the
+  Wolf note above.
+
+* **No audio in streams** — confirm PulseAudio is running in the container
+  (`pgrep pulseaudio` inside the app shell) and that the streamed app is not
+  muting the monitor device.
+
+* **Sunshine shows no apps / blank "Apps" page** — `apps.json` is generated on
+  first run; if you replaced the volume, reseed it by restarting the app once,
+  or run `sunshine --creds` / re-pair Moonlight.
+
 ## Building locally
 
 ```bash

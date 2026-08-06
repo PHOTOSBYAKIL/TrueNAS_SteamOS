@@ -33,4 +33,13 @@ services:
 #   - If you really must run both, stop Wolf (or change Sunshine's ports) first.
 #
 # Only one streaming host may own the Moonlight ports at a time.
+#
+# TROUBLESHOOTING: If the Sunshine web UI shows "CSRF Protection Error" when
+# you set up your username/password, edit the config in your mounted volume at
+# <volume>/home/.config/sunshine/sunshine.conf and set:
+#     origin_web_ui_allowed = ["*"]
+#     csrf_allowed_origins = ["https://<your-nas-ip>:47990"]
+# then Restart the app. (csrf_allowed_origins does NOT accept "*".)
+# The entrypoint normally seeds this automatically; only needed if your IP
+# changed or the config was edited.
 

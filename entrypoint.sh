@@ -34,11 +34,14 @@ export PULSE_SERVER=unix:/tmp/pulseaudio.socket
 pulseaudio --daemonize=no --exit-idle-time=-1 \
   --load="module-native-protocol-unix socket=/tmp/pulseaudio.socket" >/dev/null 2>&1 &
 
-echo "=== [SteamOS Container] Starting Virtual Display (Xorg dummy) ==="
-# A real Xorg server with the dummy video driver. Sunshine 2026.x injects input
-# through uinput/inputtino virtual devices; Xorg (with /run/udev mounted) picks
-# those up and attaches them to the display. Xvfb cannot process evdev input.
-sudo Xorg :99 -ac -nolisten tcp -noreset -config /etc/X11/xorg-headless.conf \
+echo "=== [SteamOS Container] Starting Virtual Display (Xorg) ==="
+# Use the AMD GPU config (DRI3, for Proton games) when USE_AMDGPU=1 and the GPU
+# has a connected display; otherwise the dummy driver (reliable streaming).
+XORG_CONF=/etc/X11/xorg-headless.conf
+if [ "${USE_AMDGPU:-0}" = "1" ] && [ -f /etc/X11/xorg-amd.conf ]; then
+  XORG_CONF=/etc/X11/xorg-amd.conf
+fi
+sudo Xorg :99 -ac -nolisten tcp -noreset -config "$XORG_CONF" \
   >/dev/null 2>&1 &
 export DISPLAY=:99
 

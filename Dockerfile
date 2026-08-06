@@ -78,10 +78,11 @@ RUN usermod -aG video,audio,input ${USER}
 COPY --chown=steam:steam entrypoint.sh /usr/local/bin/entrypoint.sh
 RUN chmod +x /usr/local/bin/entrypoint.sh
 
-# Headless X server config (xf86-video-dummy) — Sunshine 2026.x injects input
-# via uinput/inputtino devices, which a real Xorg server (via udev) attaches to
-# the display. Xvfb does NOT process evdev input, so input would not work.
+# Headless X server configs. xorg-headless.conf = dummy driver (default,
+# captures fine, but no DRI3 for Proton games). xorg-amd.conf = amdgpu driver
+# (DRI3 for games) for when the GPU has a real/virtual connected display.
 COPY xorg-headless.conf /etc/X11/xorg-headless.conf
+COPY xorg-amd.conf /etc/X11/xorg-amd.conf
 
 # VirtualHere USB client — lets controllers plugged into the Moonlight client
 # (Mac) appear as real USB devices in this container (needs the vhci_hcd kernel

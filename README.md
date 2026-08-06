@@ -69,6 +69,16 @@ at a time (free = 1 device).
 
 ### Troubleshooting
 
+* **Proton / Windows games crash at launch** — DXVK needs DRI3 (GPU
+  presentation), which the default dummy X driver doesn't provide. Two fixes:
+  1. **HDMI EDID emulator** (cheap "dummy plug") in the host's GPU port, then set
+     `USE_AMDGPU=1` in the container env. The AMD GPU then drives a real
+     connected display with DRI3, and games run while Sunshine still captures.
+  2. **Kernel parameter** `amdgpu.virtual_display=1` on the TrueNAS host
+     (System → Advanced → Kernel Parameters, then reboot) — same effect,
+     no hardware.
+  Without one of these, streaming + Steam work but DXVK games will crash.
+
 * **"CSRF Protection Error" / "Internal Server Error" on the Sunshine welcome
   page** — the entrypoint auto-seeds `sunshine.conf` with your host's real
   origin, but if you changed your IP or edited the config, fix it manually:

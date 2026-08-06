@@ -5,7 +5,7 @@ services:
     network_mode: host
     environment:
       - PULSE_SERVER=unix:/tmp/pulseaudio.socket
-      - TZ=Europe/London
+      - TZ=America/New_York
     devices:
       - /dev/dri:/dev/dri
       - /dev/input:/dev/input

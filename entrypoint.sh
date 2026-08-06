@@ -107,5 +107,34 @@ echo "=== [SteamOS Container] Starting Sunshine ==="
 sunshine &
 
 echo "=== [SteamOS Container] Launching SteamOS Big Picture Mode ==="
-# Launch Steam into the virtual display
-exec steam -gamepadui -steamos -silent "$@"
+# Steam supervisor. Sunshine creates the virtual gamepad only AFTER a Moonlight
+# client connects (Steam is already running by then), and Steam's controller
+# hotplug doesn't work in this container — so restart Steam once per session
+# when the gamepad appears so Steam Input rescans and detects it.
+(
+  gamepad_seen=0
+  while true; do
+    if ! pgrep -x steam >/dev/null 2>&1; then
+      echo "[SteamOS] Starting Steam..."
+      steam -gamepadui -steamos -silent >/dev/null 2>&1 &
+      gamepad_seen=0
+      sleep 15
+    fi
+    if grep -qs "Sunshine X-Box" /proc/bus/input/devices; then
+      if [ "$gamepad_seen" = "0" ]; then
+        gamepad_seen=1
+        sleep 3
+        echo "[SteamOS] Gamepad detected, restarting Steam for controller support..."
+        pkill -x steam 2>/dev/null || true
+        sleep 5
+      fi
+    else
+      gamepad_seen=0
+    fi
+    sleep 2
+  done
+) &
+
+# Launch Steam via the supervisor below (it owns Steam's lifecycle so it can
+# restart Steam when a gamepad appears). Keep the container alive as PID1.
+exec sleep infinity

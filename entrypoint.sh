@@ -57,19 +57,30 @@ xrandr --output DUMMY0 --mode 1920x1080_60.00 2>/dev/null || true
 # Window manager so Steam's Big Picture fills the screen (bare X has no WM).
 openbox >/dev/null 2>&1 &
 
-# Input hotplug helper. Sunshine 2026.x creates its virtual keyboard/mouse on
-# every client connect. Those new /dev/input/event* nodes are not world-readable,
-# so Xorg's libinput fails to open them. Watch for new devices, chmod them, and
-# re-trigger udev so Xorg attaches them.
+# Input hotplug helper. Sunshine 2026.x creates its virtual keyboard/mouse/gamepad
+# on every client connect. The container's /dev is a private tmpfs, so those new
+# devices have NO /dev/input/eventN node here and Xorg's libinput cannot open
+# them. Watch for the devices (Wolf's technique): mknod the nodes, chmod them,
+# and re-trigger udev so Xorg attaches them.
 (
-  last=$(ls /dev/input/event* 2>/dev/null | wc -l)
   while true; do
     sleep 2
-    now=$(ls /dev/input/event* 2>/dev/null | wc -l)
-    if [ "$now" != "$last" ]; then
-      sudo chmod 666 /dev/input/event* 2>/dev/null || true
+    devs=$(awk -v RS='' '/passthrough|Sunshine/ { for(i=1;i<=NF;i++){ if($i ~ /^event[0-9]+$/ || $i ~ /^js[0-9]+$/) print $i } }' /proc/bus/input/devices 2>/dev/null | sort -u)
+    [ -z "$devs" ] && continue
+    created=0
+    for dev in $devs; do
+      case "$dev" in
+        event*) minor=$((64 + ${dev#event})) ;;
+        js*)    minor=$((128 + ${dev#js})) ;;
+        *) continue ;;
+      esac
+      if [ ! -e "/dev/input/$dev" ]; then
+        sudo mknod "/dev/input/$dev" c 13 "$minor" 2>/dev/null && created=1
+      fi
+      sudo chmod 666 "/dev/input/$dev" 2>/dev/null || true
+    done
+    if [ "$created" = "1" ]; then
       sudo udevadm trigger --subsystem-match=input 2>/dev/null || true
-      last=$now
     fi
   done
 ) &

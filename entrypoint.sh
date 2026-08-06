@@ -21,10 +21,18 @@ sudo mkdir -p /run/dbus
 sudo dbus-daemon --system --fork
 sudo NetworkManager
 
+echo "=== [SteamOS Container] Granting device access ==="
+# Sunshine 2026.x uses inputtino virtual devices (uinput) for ALL input —
+# mouse, keyboard, touch, pen, gamepads. The device nodes arrive with host
+# group IDs, so open them up for the steam user.
+sudo chmod 666 /dev/uinput 2>/dev/null || true
+sudo chmod 666 /dev/dri/* 2>/dev/null || true
+sudo chmod 666 /dev/input/* 2>/dev/null || true
+
 echo "=== [SteamOS Container] Starting PulseAudio ==="
 export PULSE_SERVER=unix:/tmp/pulseaudio.socket
-pulseaudio --start --exit-idle-time=-1 \
-  --load="module-native-protocol-unix socket=/tmp/pulseaudio.socket" 2>/dev/null || true
+pulseaudio --daemonize=no --exit-idle-time=-1 \
+  --load="module-native-protocol-unix socket=/tmp/pulseaudio.socket" >/dev/null 2>&1 &
 
 echo "=== [SteamOS Container] Starting Virtual Display (Xvfb) ==="
 # Create a 1080p 60Hz virtual monitor on display port :99

@@ -115,20 +115,6 @@ if [ -n "${VH_SERVER:-}" ]; then
 fi
 
 echo "=== [SteamOS Container] Launching SteamOS Big Picture Mode ==="
-# Steam supervisor: just keeps Steam running (no forced restarts — those blanked
-# the screen on every client connect). Controllers are picked up by Steam Input
-# via the mknod/udev helper above.
-(
-  while true; do
-    if ! pgrep -x steam >/dev/null 2>&1; then
-      echo "[SteamOS] Starting Steam..."
-      dbus-run-session -- steam -gamepadui -steamos -silent >/dev/null 2>&1 &
-      sleep 15
-    fi
-    sleep 5
-  done
-) &
-
-# Launch Steam via the supervisor below (it owns Steam's lifecycle so it can
-# restart Steam when a gamepad appears). Keep the container alive as PID1.
-exec sleep infinity
+# Run Steam as PID1 (via a session bus). No supervisor: Steam manages its own
+# restarts (e.g. switching to a beta channel) without interference.
+exec dbus-run-session -- steam -gamepadui -steamos -silent "$@"

@@ -18,3 +18,19 @@ services:
     ipc: host
     privileged: true
     restart: unless-stopped
+
+# ============================================================================
+# NOTES FOR OTHER USERS
+# ============================================================================
+# IMPORTANT: Do NOT run this container alongside any OTHER Sunshine host
+# (including Wolf / Games on Whales, or a second SteamOS instance) on the same
+# machine. Sunshine and Wolf are both Moonlight streaming servers and claim the
+# same ports (47984/47989 TCP and 47999/48010/48100/48200 UDP), so one of them
+# will fail to start ("Address already in use").
+#
+#   - Run this box INSTEAD of Wolf, or
+#   - Run it on a separate machine/NAS, or
+#   - If you really must run both, stop Wolf (or change Sunshine's ports) first.
+#
+# Only one streaming host may own the Moonlight ports at a time.
+

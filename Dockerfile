@@ -50,6 +50,7 @@ RUN pacman -Syu --noconfirm && \
     networkmanager \
     sway \
     swaybg \
+    swayidle \
     xorg-xwayland \
     seatd \
     pipewire \

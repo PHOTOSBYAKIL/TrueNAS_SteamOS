@@ -1,17 +1,20 @@
 services:
   steamos:
+    # Built automatically from this repo: Arch Linux + Steam + Sunshine
     image: ghcr.io/photosbyakil/truenas_steamos:main
-    container_name: steamos-app
     network_mode: host
     environment:
       - PULSE_SERVER=unix:/tmp/pulseaudio.socket
+      - TZ=Europe/London
     devices:
-      - /dev/dri:/dev/dri 
+      - /dev/dri:/dev/dri
       - /dev/input:/dev/input
-      # Required for Sunshine to emulate your Moonlight controller inside Arch Linux
+      # Required for Sunshine to emulate a Moonlight controller inside Arch Linux
       - /dev/uinput:/dev/uinput
     volumes:
-      - /mnt/storage/apps/steamos/home:/home/steam
+      # Steam home + library lives here. Use a pool path that exists on your
+      # TrueNAS (example uses HDD_1TB) and make sure it is writable.
+      - /mnt/HDD_1TB/apps/steamos/home:/home/steam
     ipc: host
     privileged: true
     restart: unless-stopped

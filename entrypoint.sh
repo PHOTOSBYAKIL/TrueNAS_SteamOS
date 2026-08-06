@@ -31,16 +31,17 @@ done
 
 echo "=== [SteamOS Container] Seeding Sunshine config ==="
 # Prevent Sunshine's "CSRF Protection Error" on the welcome page: seed the
-# config with this host's real origin. NOTE: csrf_allowed_origins does NOT
-# accept "*" (Sunshine rejects it) — it needs the exact origin in use.
+# config with this host's real origin. NOTE: csrf_allowed_origins is a
+# comma-separated list WITHOUT brackets (e.g. "https://host:47990"), and
+# origin_web_ui_allowed is a single value: pc / lan / wan.
 SUNCONF="$HOME/.config/sunshine/sunshine.conf"
 if [ ! -s "$SUNCONF" ]; then
   LAN_IP=$(ip route get 1.1.1.1 2>/dev/null | sed -n 's/.*src \([0-9.]*\).*/\1/p' | head -1)
   [ -z "$LAN_IP" ] && LAN_IP=$(hostname -I 2>/dev/null | awk '{print $1}')
   mkdir -p "$(dirname "$SUNCONF")"
   cat > "$SUNCONF" <<EOF
-origin_web_ui_allowed = ["*"]
-csrf_allowed_origins = ["https://${LAN_IP}:47990"]
+origin_web_ui_allowed = lan
+csrf_allowed_origins = https://${LAN_IP}:47990
 EOF
   echo "Wrote Sunshine config for origin https://${LAN_IP}:47990"
 fi

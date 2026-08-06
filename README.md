@@ -56,14 +56,15 @@ First start takes a couple of minutes (Steam downloads/updates itself).
 
   1. Edit `<your-volume>/home/.config/sunshine/sunshine.conf` and set:
      ```
-     origin_web_ui_allowed = ["*"]
-     csrf_allowed_origins = ["https://<your-nas-ip>:47990"]
-     ```
+  origin_web_ui_allowed = lan
+  csrf_allowed_origins = https://<your-nas-ip>:47990
+  ```
   2. Restart the app (Apps → steamos → Restart).
 
-  Note: `csrf_allowed_origins` does **not** accept a wildcard (`["*"]`) —
-  Sunshine rejects it with `Invalid 'csrf_allowed_origins' entry rejected`.
-  It needs the exact origin you open in the browser.
+  Note: `csrf_allowed_origins` is a comma-separated list **without brackets**
+  (e.g. `https://host:47990`) — bracket form like `["https://..."]` is parsed
+  literally (with `[]`) and silently never matches. `origin_web_ui_allowed`
+  takes a single value: `pc`, `lan`, or `wan`.
 
 * **"Address already in use" when Sunshine starts** — another Sunshine host
   (Wolf, a second SteamOS instance) is running on the same machine. See the

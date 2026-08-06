@@ -48,6 +48,12 @@ for i in $(seq 1 60); do
   sleep 0.5
 done
 
+# The dummy driver falls back to 1024x768; set a sane default resolution.
+# (xrandr can also switch this to match a Moonlight client later.)
+xrandr --newmode 1920x1080_60.00 173.00 1920 2048 2248 2576 1080 1083 1088 1120 -hsync +vsync 2>/dev/null
+xrandr --addmode DUMMY0 1920x1080_60.00 2>/dev/null
+xrandr --output DUMMY0 --mode 1920x1080_60.00 2>/dev/null || true
+
 echo "=== [SteamOS Container] Seeding Sunshine config ==="
 # Prevent Sunshine's "CSRF Protection Error" on the welcome page: seed the
 # config with this host's real origin. NOTE: csrf_allowed_origins is a

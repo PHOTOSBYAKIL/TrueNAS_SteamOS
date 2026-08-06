@@ -16,9 +16,9 @@ export HOME=${HOME:-/home/steam}
 export XDG_RUNTIME_DIR=/run/user/${PUID}
 
 echo "=== [SteamOS Container] Preparing runtime ==="
-mkdir -p "$XDG_RUNTIME_DIR" "$XDG_RUNTIME_DIR/pipewire" "$XDG_RUNTIME_DIR/pulse" "$XDG_RUNTIME_DIR/dbus-1"
-chown -R "${PUID}:${PGID}" "$XDG_RUNTIME_DIR" 2>/dev/null || true
-chmod 0700 "$XDG_RUNTIME_DIR" 2>/dev/null || true
+sudo mkdir -p "$XDG_RUNTIME_DIR" "$XDG_RUNTIME_DIR/pipewire" "$XDG_RUNTIME_DIR/pulse" "$XDG_RUNTIME_DIR/dbus-1"
+sudo chown -R "${PUID}:${PGID}" "$XDG_RUNTIME_DIR" 2>/dev/null || true
+sudo chmod 0700 "$XDG_RUNTIME_DIR" 2>/dev/null || true
 chown -R "${PUID}:${PGID}" "$HOME" 2>/dev/null || true
 
 echo "=== [SteamOS Container] Starting system services (D-Bus + NetworkManager) ==="

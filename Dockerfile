@@ -82,6 +82,12 @@ RUN chmod +x /usr/local/bin/entrypoint.sh
 # the display. Xvfb does NOT process evdev input, so input would not work.
 COPY xorg-headless.conf /etc/X11/xorg-headless.conf
 
+# VirtualHere USB client — lets controllers plugged into the Moonlight client
+# (Mac) appear as real USB devices in this container (needs the vhci_hcd kernel
+# module on the host). Connect it by setting VH_SERVER=<ip> in the container env.
+RUN wget -q -O /usr/local/bin/vhclient https://www.virtualhere.com/sites/default/files/usbclient/vhclientx86_64 && \
+    chmod +x /usr/local/bin/vhclient
+
 USER ${USER}
 WORKDIR ${HOME}
 

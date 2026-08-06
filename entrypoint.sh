@@ -106,6 +106,14 @@ echo "=== [SteamOS Container] Starting Sunshine ==="
 # Launch Sunshine in the background to capture Display :99
 sunshine &
 
+echo "=== [SteamOS Container] Starting VirtualHere USB client ==="
+# Controllers plugged into the Moonlight client (Mac) become real USB devices
+# here. Set VH_SERVER=<mac-ip> in the container env to enable it.
+if [ -n "${VH_SERVER:-}" ]; then
+  /usr/local/bin/vhclient -n -t "$VH_SERVER" >/dev/null 2>&1 &
+  echo "VirtualHere client connecting to ${VH_SERVER}"
+fi
+
 echo "=== [SteamOS Container] Launching SteamOS Big Picture Mode ==="
 # Steam supervisor. Sunshine creates the virtual gamepad only AFTER a Moonlight
 # client connects (Steam is already running by then), and Steam's controller

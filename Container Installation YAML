@@ -6,11 +6,15 @@ services:
     environment:
       - PULSE_SERVER=unix:/tmp/pulseaudio.socket
       - TZ=America/New_York
+      # IP of the Mac running Moonlight + the VirtualHere USB Server. Change to
+      # your Mac's IP. This forwards your USB/Bluetooth controllers to the box.
+      - VH_SERVER=192.168.86.42
     devices:
       - /dev/dri:/dev/dri
       - /dev/input:/dev/input
-      # Required for Sunshine to emulate a Moonlight controller inside Arch Linux
       - /dev/uinput:/dev/uinput
+      # Needed for VirtualHere to create the virtual USB controllers
+      - /dev/bus/usb:/dev/bus/usb
     volumes:
       # Steam home + library lives here. Use a pool path that exists on your
       # TrueNAS (example uses HDD_1TB) and make sure it is writable.

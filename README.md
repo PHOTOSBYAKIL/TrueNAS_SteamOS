@@ -10,7 +10,7 @@ The image is built automatically from this repo and published to
 
 ## What it does
 
-* Runs **Steam** (Big Picture / `-steamos`) inside an **Xvfb** virtual display.
+* Runs **Steam** (Big Picture / `-steamos`) inside a headless **sway (Wayland)** session.
 * Runs **Sunshine**, so any Moonlight client can stream the display (games, desktop).
 * Runs **PulseAudio**, so game audio works over the stream.
 * Provides the GPU (AMD/Intel) + current Mesa to Steam, including 32-bit support.
@@ -34,7 +34,7 @@ First start takes a couple of minutes (Steam downloads/updates itself).
 
 * Pair **Moonlight** with this box like any Sunshine host
   (open `http://<nas-ip>:47990`, get the pairing PIN).
-* Steam runs Big Picture on the virtual display.
+* Steam runs Big Picture on the headless sway session.
 * For Quest VR via Steam Link: with the box on your LAN, open the **Steam Link**
   app on the Quest and connect to the Steam client here — the current Mesa
   passes SteamVR's driver check.
@@ -69,15 +69,12 @@ at a time (free = 1 device).
 
 ### Troubleshooting
 
-* **Proton / Windows games crash at launch** — DXVK needs DRI3 (GPU
-  presentation), which the default dummy X driver doesn't provide. Two fixes:
-  1. **HDMI EDID emulator** (cheap "dummy plug") in the host's GPU port, then set
-     `USE_AMDGPU=1` in the container env. The AMD GPU then drives a real
-     connected display with DRI3, and games run while Sunshine still captures.
-  2. **Kernel parameter** `amdgpu.virtual_display=1` on the TrueNAS host
-     (System → Advanced → Kernel Parameters, then reboot) — same effect,
-     no hardware.
-  Without one of these, streaming + Steam work but DXVK games will crash.
+* **Proton / Windows games crash at launch** — the box now uses a headless
+  **sway (Wayland)** compositor, which lets games present directly to the GPU
+  (no DRI3/X11 requirement). This requires the host kernel parameter
+  `amdgpu.virtual_display=desc:1920x1080` (TrueNAS → System → Advanced →
+  Kernel Parameters, then reboot) — without it wlroots falls back to software
+  rendering and games/streaming break. Verify with `cat /proc/cmdline | grep virtual`.
 
 * **"CSRF Protection Error" / "Internal Server Error" on the Sunshine welcome
   page** — the entrypoint auto-seeds `sunshine.conf` with your host's real

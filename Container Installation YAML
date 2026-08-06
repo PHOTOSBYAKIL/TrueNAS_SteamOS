@@ -9,11 +9,6 @@ services:
       # IP of the Mac running Moonlight + the VirtualHere USB Server. Change to
       # your Mac's IP. This forwards your USB/Bluetooth controllers to the box.
       - VH_SERVER=192.168.86.42
-      # Set to 1 to use the AMD GPU X driver (enables DRI3 so Proton games can
-      # run). Requires a connected display on the GPU: an HDMI EDID emulator
-      # (dummy plug) or the kernel param amdgpu.virtual_display=1. Leave unset
-      # (default) for the dummy driver, which streams reliably.
-      # - USE_AMDGPU=1
     devices:
       - /dev/dri:/dev/dri
       - /dev/input:/dev/input

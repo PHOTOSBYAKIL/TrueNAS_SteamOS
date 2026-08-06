@@ -1,72 +1,116 @@
 #!/bin/bash
-set -e
+set -o pipefail
 
-# TrueNAS_SteamOS — standalone container:
-# Xvfb virtual display + Sunshine (Moonlight host) + Steam Big Picture.
-# Arch ships the current Mesa (>= 25.2.1) so SteamVR's Steam Link driver works.
+# TrueNAS_SteamOS — headless Wayland (sway) streaming container.
+# Runs: D-Bus -> NetworkManager -> PipeWire -> seatd -> sway (headless+libinput)
+#      -> Steam -> Sunshine (wlr-screencopy capture, VA-API encode).
+#
+# Requires host kernel parameter: amdgpu.virtual_display=desc:1920x1080
+# (System -> Advanced -> Kernel Parameters, then reboot). Without it wlroots
+# falls back to software rendering and games/streaming break.
 
-echo "=== [SteamOS Container] Preparing runtime environment ==="
-export XDG_RUNTIME_DIR=${XDG_RUNTIME_DIR:-/tmp/runtime-steam}
-sudo mkdir -p "$XDG_RUNTIME_DIR" 2>/dev/null || true
-sudo chown -R "$(id -u):$(id -g)" "$XDG_RUNTIME_DIR" 2>/dev/null || true
-sudo chmod 0700 "$XDG_RUNTIME_DIR" 2>/dev/null || true
-# The mounted HOME may have been created as root — make it writable
-sudo chown -R "$(id -u):$(id -g)" "$HOME" 2>/dev/null || true
+PUID=${PUID:-1000}
+PGID=${PGID:-1000}
+USER_NAME=${UNAME:-steam}
+export HOME=${HOME:-/home/steam}
+export XDG_RUNTIME_DIR=/run/user/${PUID}
+
+echo "=== [SteamOS Container] Preparing runtime ==="
+mkdir -p "$XDG_RUNTIME_DIR" "$XDG_RUNTIME_DIR/pipewire" "$XDG_RUNTIME_DIR/pulse" "$XDG_RUNTIME_DIR/dbus-1"
+chown -R "${PUID}:${PGID}" "$XDG_RUNTIME_DIR" 2>/dev/null || true
+chmod 0700 "$XDG_RUNTIME_DIR" 2>/dev/null || true
+chown -R "${PUID}:${PGID}" "$HOME" 2>/dev/null || true
 
 echo "=== [SteamOS Container] Starting system services (D-Bus + NetworkManager) ==="
-# Steam reports "waiting for network" if it cannot reach NetworkManager's D-Bus
-# API. Start the system bus + NetworkManager (requires root; steam has NOPASSWD sudo).
+# Steam needs NetworkManager's D-Bus API for network state; sway needs D-Bus too.
 sudo dbus-uuidgen --ensure 2>/dev/null || true
 sudo mkdir -p /run/dbus
 sudo dbus-daemon --system --fork
 sudo NetworkManager
 
+# Session bus
+DBUS_SESSION_BUS_ADDRESS="unix:path=${XDG_RUNTIME_DIR}/bus"
+export DBUS_SESSION_BUS_ADDRESS
+sudo -u "$USER_NAME" env DBUS_SESSION_BUS_ADDRESS="$DBUS_SESSION_BUS_ADDRESS" \
+  XDG_RUNTIME_DIR="$XDG_RUNTIME_DIR" HOME="$HOME" \
+  dbus-daemon --session --address="$DBUS_SESSION_BUS_ADDRESS" --nofork >/tmp/dbus-session.log 2>&1 &
+
 echo "=== [SteamOS Container] Granting device access ==="
-# Sunshine 2026.x uses inputtino virtual devices (uinput) for ALL input —
-# mouse, keyboard, touch, pen, gamepads. The device nodes arrive with host
-# group IDs, so open them up for the steam user.
 sudo chmod 666 /dev/uinput 2>/dev/null || true
 sudo chmod 666 /dev/dri/* 2>/dev/null || true
 sudo chmod 666 /dev/input/* 2>/dev/null || true
 
-echo "=== [SteamOS Container] Starting PulseAudio ==="
-export PULSE_SERVER=unix:/tmp/pulseaudio.socket
-pulseaudio --daemonize=no --exit-idle-time=-1 \
-  --load="module-native-protocol-unix socket=/tmp/pulseaudio.socket" >/dev/null 2>&1 &
+echo "=== [SteamOS Container] Starting PipeWire ==="
+sudo -u "$USER_NAME" env XDG_RUNTIME_DIR="$XDG_RUNTIME_DIR" HOME="$HOME" \
+  DBUS_SESSION_BUS_ADDRESS="$DBUS_SESSION_BUS_ADDRESS" \
+  PIPEWIRE_RUNTIME_DIR="$XDG_RUNTIME_DIR/pipewire" \
+  pipewire >/tmp/pipewire.log 2>&1 &
+sleep 1
+sudo -u "$USER_NAME" env XDG_RUNTIME_DIR="$XDG_RUNTIME_DIR" HOME="$HOME" \
+  DBUS_SESSION_BUS_ADDRESS="$DBUS_SESSION_BUS_ADDRESS" \
+  PIPEWIRE_RUNTIME_DIR="$XDG_RUNTIME_DIR/pipewire" \
+  pipewire-pulse >/tmp/pipewire-pulse.log 2>&1 &
+sleep 1
 
-echo "=== [SteamOS Container] Starting Virtual Display (Xorg) ==="
-# Use the AMD GPU config (DRI3, for Proton games) when USE_AMDGPU=1 and the GPU
-# has a connected display; otherwise the dummy driver (reliable streaming).
-XORG_CONF=/etc/X11/xorg-headless.conf
-if [ "${USE_AMDGPU:-0}" = "1" ] && [ -f /etc/X11/xorg-amd.conf ]; then
-  XORG_CONF=/etc/X11/xorg-amd.conf
-fi
-sudo Xorg :99 -ac -nolisten tcp -noreset -config "$XORG_CONF" \
-  >/dev/null 2>&1 &
-export DISPLAY=:99
+echo "=== [SteamOS Container] Starting seatd ==="
+seatd -g video >/tmp/seatd.log 2>&1 &
+sleep 1
 
-# Wait until the X server accepts connections before starting Sunshine
-for i in $(seq 1 60); do
-  [ -S /tmp/.X11-unix/X99 ] && break
-  sleep 0.5
+echo "=== [SteamOS Container] Starting sway (headless + libinput) ==="
+# headless = virtual output; libinput = Sunshine's uinput input devices.
+# WLR_LIBINPUT_NO_DEVICES=1 lets libinput start empty and pick up devices
+# via udev when a Moonlight client connects.
+SWAY_ENV="XDG_RUNTIME_DIR=$XDG_RUNTIME_DIR
+XDG_SESSION_TYPE=wayland
+XDG_CURRENT_DESKTOP=sway
+XDG_SESSION_DESKTOP=sway
+HOME=$HOME
+DBUS_SESSION_BUS_ADDRESS=$DBUS_SESSION_BUS_ADDRESS
+PIPEWIRE_RUNTIME_DIR=$XDG_RUNTIME_DIR/pipewire
+WLR_BACKENDS=headless,libinput
+WLR_LIBINPUT_NO_DEVICES=1
+SWAYSOCK=$XDG_RUNTIME_DIR/sway-ipc.sock"
+
+sudo -u "$USER_NAME" env $SWAY_ENV sway -c /etc/sway/config \
+  >/tmp/sway.log 2>&1 &
+SWAY_PID=$!
+export WAYLAND_DISPLAY=wayland-1
+
+# Wait for sway to be ready
+for i in $(seq 1 20); do
+  [ -S "$XDG_RUNTIME_DIR/sway-ipc.sock" ] && break
+  sleep 1
 done
 
-# The virtual head starts unconnected at a fallback resolution; force a sane
-# default mode (also makes the GPU output active for DRI3 game presentation).
-OUT=$(DISPLAY=:99 xrandr 2>/dev/null | awk '/primary|connected|disconnected/ {print $1; exit}')
-OUT=${OUT:-HDMI-A-0}
-xrandr --newmode 1920x1080_60.00 173.00 1920 2048 2248 2576 1080 1083 1088 1120 -hsync +vsync 2>/dev/null
-xrandr --addmode "$OUT" 1920x1080_60.00 2>/dev/null
-xrandr --output "$OUT" --mode 1920x1080_60.00 2>/dev/null || true
+echo "=== [SteamOS Container] Seeding Sunshine config ==="
+SUNCONF="$HOME/.config/sunshine/sunshine.conf"
+if [ ! -s "$SUNCONF" ]; then
+  LAN_IP=$(ip route get 1.1.1.1 2>/dev/null | sed -n 's/.*src \([0-9.]*\).*/\1/p' | head -1)
+  [ -z "$LAN_IP" ] && LAN_IP=$(hostname -I 2>/dev/null | awk '{print $1}')
+  mkdir -p "$(dirname "$SUNCONF")"
+  cat > "$SUNCONF" <<EOF
+origin_web_ui_allowed = lan
+csrf_allowed_origins = https://${LAN_IP}:47990
+EOF
+  echo "Wrote Sunshine config for origin https://${LAN_IP}:47990"
+fi
 
-# Window manager so Steam's Big Picture fills the screen (bare X has no WM).
-openbox >/dev/null 2>&1 &
+echo "=== [SteamOS Container] Starting Sunshine (wlr capture) ==="
+sudo -u "$USER_NAME" env XDG_RUNTIME_DIR="$XDG_RUNTIME_DIR" HOME="$HOME" \
+  WAYLAND_DISPLAY="$WAYLAND_DISPLAY" DISPLAY=:0 \
+  DBUS_SESSION_BUS_ADDRESS="$DBUS_SESSION_BUS_ADDRESS" \
+  sunshine >/tmp/sunshine.log 2>&1 &
 
-# Input hotplug helper. Sunshine 2026.x creates its virtual keyboard/mouse/gamepad
-# on every client connect. The container's /dev is a private tmpfs, so those new
-# devices have NO /dev/input/eventN node here and Xorg's libinput cannot open
-# them. Watch for the devices (Wolf's technique): mknod the nodes, chmod them,
-# and re-trigger udev so Xorg attaches them.
+echo "=== [SteamOS Container] Starting VirtualHere USB client ==="
+if [ -n "${VH_SERVER:-}" ]; then
+  /usr/local/bin/vhclient -n -t "$VH_SERVER" >/dev/null 2>&1 &
+  echo "VirtualHere client connecting to ${VH_SERVER}"
+fi
+
+echo "=== [SteamOS Container] Input hotplug helper ==="
+# Sunshine creates its virtual input devices (uinput) per client connect. The
+# container's /dev is private, so mknod the nodes + trigger udev so sway's
+# libinput backend attaches them (Wolf's fake-udev technique).
 (
   while true; do
     sleep 2
@@ -90,36 +134,13 @@ openbox >/dev/null 2>&1 &
   done
 ) &
 
-echo "=== [SteamOS Container] Seeding Sunshine config ==="
-# Prevent Sunshine's "CSRF Protection Error" on the welcome page: seed the
-# config with this host's real origin. NOTE: csrf_allowed_origins is a
-# comma-separated list WITHOUT brackets (e.g. "https://host:47990"), and
-# origin_web_ui_allowed is a single value: pc / lan / wan.
-SUNCONF="$HOME/.config/sunshine/sunshine.conf"
-if [ ! -s "$SUNCONF" ]; then
-  LAN_IP=$(ip route get 1.1.1.1 2>/dev/null | sed -n 's/.*src \([0-9.]*\).*/\1/p' | head -1)
-  [ -z "$LAN_IP" ] && LAN_IP=$(hostname -I 2>/dev/null | awk '{print $1}')
-  mkdir -p "$(dirname "$SUNCONF")"
-  cat > "$SUNCONF" <<EOF
-origin_web_ui_allowed = lan
-csrf_allowed_origins = https://${LAN_IP}:47990
-EOF
-  echo "Wrote Sunshine config for origin https://${LAN_IP}:47990"
-fi
+echo "=== [SteamOS Container] Launching Steam Big Picture ==="
+sudo -u "$USER_NAME" env XDG_RUNTIME_DIR="$XDG_RUNTIME_DIR" HOME="$HOME" \
+  WAYLAND_DISPLAY="$WAYLAND_DISPLAY" DISPLAY=:0 \
+  DBUS_SESSION_BUS_ADDRESS="$DBUS_SESSION_BUS_ADDRESS" \
+  PIPEWIRE_RUNTIME_DIR="$XDG_RUNTIME_DIR/pipewire" \
+  STEAM_USE_DYNAMIC_VK=1 \
+  dbus-run-session -- steam -gamepadui -steamos -silent "$@" >/tmp/steam.log 2>&1
 
-echo "=== [SteamOS Container] Starting Sunshine ==="
-# Launch Sunshine in the background to capture Display :99
-sunshine &
-
-echo "=== [SteamOS Container] Starting VirtualHere USB client ==="
-# Controllers plugged into the Moonlight client (Mac) become real USB devices
-# here. Set VH_SERVER=<mac-ip> in the container env to enable it.
-if [ -n "${VH_SERVER:-}" ]; then
-  /usr/local/bin/vhclient -n -t "$VH_SERVER" >/dev/null 2>&1 &
-  echo "VirtualHere client connecting to ${VH_SERVER}"
-fi
-
-echo "=== [SteamOS Container] Launching SteamOS Big Picture Mode ==="
-# Run Steam as PID1. When Steam exits the container stops (Sunshine dies with
-# it), so the Moonlight client returns to its homepage.
-exec dbus-run-session -- steam -gamepadui -steamos -silent "$@"
+echo "=== [SteamOS Container] Steam exited — stopping container ==="
+exit 0

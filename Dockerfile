@@ -34,16 +34,7 @@ RUN pacman -Syu --noconfirm && \
     ttf-liberation \
     ttf-dejavu \
     xterm \
-    xorg-server \
-    xorg-server-xvfb \
-    xorg-xinit \
-    xorg-xrandr \
-    wmctrl \
     sunshine \
-    pulseaudio \
-    lib32-pulseaudio \
-    alsa-plugins \
-    lib32-alsa-plugins \
     vulkan-icd-loader \
     lib32-vulkan-icd-loader \
     mesa \
@@ -57,10 +48,18 @@ RUN pacman -Syu --noconfirm && \
     steam \
     dbus \
     networkmanager \
-    xf86-video-dummy \
-    xf86-video-amdgpu \
-    xf86-input-libinput \
-    openbox \
+    sway \
+    swaybg \
+    xorg-xwayland \
+    seatd \
+    pipewire \
+    pipewire-pulse \
+    wireplumber \
+    pipewire-audio \
+    lib32-pipewire \
+    lib32-libpulse \
+    libinput \
+    wayland-utils \
     && pacman -Scc --noconfirm
 
 # 3. Create non-root user 'steam'
@@ -78,11 +77,9 @@ RUN usermod -aG video,audio,input ${USER}
 COPY --chown=steam:steam entrypoint.sh /usr/local/bin/entrypoint.sh
 RUN chmod +x /usr/local/bin/entrypoint.sh
 
-# Headless X server configs. xorg-headless.conf = dummy driver (default,
-# captures fine, but no DRI3 for Proton games). xorg-amd.conf = amdgpu driver
-# (DRI3 for games) for when the GPU has a real/virtual connected display.
-COPY xorg-headless.conf /etc/X11/xorg-headless.conf
-COPY xorg-amd.conf /etc/X11/xorg-amd.conf
+# Headless sway config (WLR_BACKENDS=headless,libinput). Requires host kernel
+# param amdgpu.virtual_display=desc:1920x1080 for GPU rendering.
+COPY sway.config /etc/sway/config
 
 # VirtualHere USB client — lets controllers plugged into the Moonlight client
 # (Mac) appear as real USB devices in this container (needs the vhci_hcd kernel

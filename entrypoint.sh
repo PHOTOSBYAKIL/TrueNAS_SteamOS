@@ -53,7 +53,7 @@ sudo -u "$USER_NAME" env XDG_RUNTIME_DIR="$XDG_RUNTIME_DIR" HOME="$HOME" \
 sleep 1
 
 echo "=== [SteamOS Container] Starting seatd ==="
-seatd -g video >/tmp/seatd.log 2>&1 &
+sudo seatd -g video >/tmp/seatd.log 2>&1 &
 sleep 1
 
 echo "=== [SteamOS Container] Starting sway (headless + libinput) ==="

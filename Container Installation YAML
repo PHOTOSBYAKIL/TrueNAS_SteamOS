@@ -15,6 +15,8 @@ services:
       - /dev/uinput:/dev/uinput
       # Needed for VirtualHere to create the virtual USB controllers
       - /dev/bus/usb:/dev/bus/usb
+      # Needed for VirtualHere's USB client (vhci_hcd control device)
+      - /dev/vhci:/dev/vhci
     volumes:
       # Steam home + library lives here. Use a pool path that exists on your
       # TrueNAS (a fast SSD pool is recommended). Example uses GAMING_1TB_SSD.

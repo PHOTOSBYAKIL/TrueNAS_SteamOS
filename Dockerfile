@@ -61,6 +61,12 @@ RUN pacman -Syu --noconfirm && \
     lib32-libpulse \
     libinput \
     wayland-utils \
+    gamescope \
+    mangohud \
+    libva \
+    libva-utils \
+    vulkan-tools \
+    mesa-utils \
     && pacman -Scc --noconfirm
 
 # 3. Create non-root user 'steam'

@@ -67,6 +67,10 @@ RUN pacman -Syu --noconfirm && \
     libva-utils \
     vulkan-tools \
     mesa-utils \
+    noise-suppression-for-voice \
+    libwebrtc-audio-processing \
+    ladspa \
+    swh-plugins \
     && pacman -Scc --noconfirm
 
 # 3. Create non-root user 'steam'

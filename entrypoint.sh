@@ -15,6 +15,14 @@ USER_NAME=${UNAME:-steam}
 export HOME=${HOME:-/home/steam}
 export XDG_RUNTIME_DIR=/run/user/${PUID}
 
+# Audio configuration (all configurable via env; defaults work out of the box)
+export MIC_SERVER=${MIC_SERVER:-192.168.86.42}          # Moonlight client running PulseAudio
+export AUDIO_MIC_ENABLED=${AUDIO_MIC_ENABLED:-true}      # tunnel the Mac's mic in
+export AUDIO_NOISE_SUPPRESSION=${AUDIO_NOISE_SUPPRESSION:-true}  # rnnoise
+export AUDIO_ECHO_CANCEL=${AUDIO_ECHO_CANCEL:-false}     # WebRTC AEC
+export AUDIO_TUNNEL_LATENCY_MS=${AUDIO_TUNNEL_LATENCY_MS:-200}
+export MIC_SOURCE=${MIC_SOURCE:-}                        # empty = follow the Mac's default mic
+
 echo "=== [SteamOS Container] Preparing runtime ==="
 sudo mkdir -p "$XDG_RUNTIME_DIR" "$XDG_RUNTIME_DIR/pipewire" "$XDG_RUNTIME_DIR/pulse" "$XDG_RUNTIME_DIR/dbus-1"
 sudo chown -R "${PUID}:${PGID}" "$XDG_RUNTIME_DIR" 2>/dev/null || true
@@ -67,6 +75,92 @@ context.modules = [
     }
 ]
 PWEOF
+chown -R "${PUID}:${PGID}" "$HOME/.config/pipewire" 2>/dev/null || true
+
+echo "=== [SteamOS Container] Configuring microphone (tunnel + processing) ==="
+# Mic input comes from the Moonlight client's (Mac) PulseAudio over the network.
+# Optional rnnoise noise suppression + WebRTC echo cancellation clean it up.
+# All modules use nofail so PipeWire never crashes if a piece is unavailable.
+mkdir -p "$HOME/.config/pipewire/pipewire.conf.d"
+
+if [ "$AUDIO_MIC_ENABLED" = "true" ]; then
+  cat > "$HOME/.config/pipewire/pipewire.conf.d/11-mic-tunnel.conf" <<PWTUNNEL
+context.modules = [
+    {
+        name = libpipewire-module-pulse-tunnel
+        flags = [ nofail ]
+        args = {
+            tunnel.mode = source
+            pulse.server.address = "tcp:${MIC_SERVER}"
+            pulse.latency = ${AUDIO_TUNNEL_LATENCY_MS}
+            reconnect.interval.ms = 5000
+            ${MIC_SOURCE:+"target.object = \"${MIC_SOURCE}\""}
+            stream.props = {
+                node.name = "mac-mic"
+                node.description = "Mac Microphone"
+                media.class = Audio/Source
+            }
+        }
+    }
+]
+PWTUNNEL
+fi
+
+if [ "$AUDIO_NOISE_SUPPRESSION" = "true" ]; then
+  cat > "$HOME/.config/pipewire/pipewire.conf.d/12-noise-suppression.conf" <<'PWFILTER'
+context.modules = [
+    {
+        name = libpipewire-module-filter-chain
+        flags = [ nofail ]
+        args = {
+            node.description = "Noise Canceling source"
+            media.name = "Noise Canceling source"
+            filter.graph = {
+                nodes = [
+                    {
+                        type = ladspa
+                        name = rnnoise
+                        plugin = /usr/lib/ladspa/librnnoise_ladspa.so
+                        label = noise_suppressor_mono
+                        control = {
+                            "VAD Threshold (%)" 50.0
+                        }
+                    }
+                ]
+            }
+            capture.props = {
+                node.name = "capture.rnnoise_source"
+                node.passive = true
+                audio.rate = 48000
+            }
+            playback.props = {
+                node.name = "Noise Canceling source"
+                media.class = Audio/Source
+                audio.rate = 48000
+            }
+        }
+    }
+]
+PWFILTER
+fi
+
+if [ "$AUDIO_ECHO_CANCEL" = "true" ]; then
+  cat > "$HOME/.config/pipewire/pipewire.conf.d/13-echo-cancel.conf" <<'PWEC'
+context.modules = [
+    {
+        name = libpipewire-module-echo-cancel
+        flags = [ nofail ]
+        args = {
+            capture.props = { node.name = "Echo Cancel Capture" }
+            source.props = { node.name = "Echo Cancellation Source" }
+            sink.props = { node.name = "Echo Cancellation Sink" }
+            playback.props = { node.name = "Echo Cancellation Playback" }
+        }
+    }
+]
+PWEC
+fi
+
 chown -R "${PUID}:${PGID}" "$HOME/.config/pipewire" 2>/dev/null || true
 
 echo "=== [SteamOS Container] Starting PipeWire ==="
@@ -177,6 +271,34 @@ echo "=== [SteamOS Container] Input hotplug helper ==="
     done
     if [ "$created" = "1" ]; then
       sudo udevadm trigger --action=add --subsystem-match=input 2>/dev/null || true
+    fi
+  done
+) &
+
+echo "=== [SteamOS Container] Audio supervisor ==="
+# Self-heals the audio stack so mid-session device changes (mic unplug/replug,
+# Bluetooth switch, Mac PA restart, app sink-switch) recover in a few seconds.
+# Only touches audio routing — never sway/Steam/Sunshine video/input.
+(
+  export PULSE_SERVER=unix:"$XDG_RUNTIME_DIR"/pulse/native
+  while true; do
+    sleep 3
+    # Keep the game/output sink pinned so Sunshine keeps capturing
+    if [ "$(pactl get-default-sink 2>/dev/null)" != "sunshine-null" ]; then
+      pactl set-default-sink sunshine-null 2>/dev/null || true
+    fi
+    if [ "$AUDIO_MIC_ENABLED" = "true" ]; then
+      # Games should use the processed (noise-suppressed) mic
+      if [ "$(pactl get-default-source 2>/dev/null)" != "Noise Canceling source" ]; then
+        pactl set-default-source "Noise Canceling source" 2>/dev/null || true
+      fi
+      # Ensure the rnnoise filter captures from the mac-mic tunnel (re-links
+      # after the tunnel drops/reconnects or the source name changes)
+      out=$(pw-link -o 2>/dev/null | grep -m1 "^mac-mic:")
+      in=$(pw-link -i 2>/dev/null | grep -m1 "capture.rnnoise_source")
+      if [ -n "$out" ] && [ -n "$in" ]; then
+        pw-link "$out" "$in" 2>/dev/null || true
+      fi
     fi
   done
 ) &

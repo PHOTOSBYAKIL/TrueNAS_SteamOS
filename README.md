@@ -68,6 +68,39 @@ at a time (free = 1 device).
 * **Storage:** the mounted `/home/steam` volume holds the Steam client, config
   and library. Give it a pool with enough space for your games.
 
+### Microphone (from the Moonlight client)
+
+Game audio output works automatically. For a **microphone**, the box tunnels
+the Moonlight client's (Mac) PulseAudio default mic over the network and
+optional **rnnoise noise suppression** cleans it up:
+
+1. On the **Mac**: make sure PulseAudio is running and serving over the network:
+   ```bash
+   brew services start pulseaudio
+   ```
+   (config: `module-native-protocol-tcp auth-anonymous=1`, port 4713 — already
+   set up if you previously used a PulseAudio mic tunnel). Grant PulseAudio
+   Microphone permission in System Settings → Privacy & Security.
+2. In the container set `MIC_SERVER` to the Mac's IP (the YAML defaults it).
+3. The Mac's default mic appears in the box as a **"Noise Canceling source"**
+   that games/Steam use. Switch mics (RØDE ↔ Bluetooth headset) by changing the
+   Mac's default input — the box follows it automatically.
+
+Environment variables:
+
+| Var | Default | Purpose |
+|---|---|---|
+| `MIC_SERVER` | `192.168.86.42` | Mac's PulseAudio server |
+| `AUDIO_MIC_ENABLED` | `true` | Load the mic tunnel |
+| `AUDIO_NOISE_SUPPRESSION` | `true` | rnnoise noise-canceled source |
+| `AUDIO_ECHO_CANCEL` | `false` | WebRTC echo cancellation |
+| `AUDIO_TUNNEL_LATENCY_MS` | `200` | Tunnel latency |
+| `MIC_SOURCE` | *(empty)* | Pin to a specific Mac mic name, or empty = follow Mac default |
+
+An **audio supervisor** keeps the stack healthy: if the mic drops/reconnects,
+a Bluetooth device switches, or the Mac's PulseAudio restarts, routing
+recovers automatically in a few seconds. It never touches video/input routing.
+
 ### Troubleshooting
 
 * **Mouse / keyboard / controller not working** — the entrypoint auto-creates

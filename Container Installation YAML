@@ -9,6 +9,15 @@ services:
       # IP of the Mac running Moonlight + the VirtualHere USB Server. Change to
       # your Mac's IP. This forwards your USB/Bluetooth controllers to the box.
       - VH_SERVER=192.168.86.42
+      # Microphone from the Moonlight client (Mac). The box tunnels the Mac's
+      # PulseAudio default mic and (optionally) noise-suppresses it with rnnoise.
+      # Change MIC_SERVER to your Mac's IP. Set AUDIO_MIC_ENABLED=false to disable.
+      - MIC_SERVER=192.168.86.42
+      - AUDIO_MIC_ENABLED=true
+      - AUDIO_NOISE_SUPPRESSION=true
+      # - AUDIO_ECHO_CANCEL=false
+      # - AUDIO_TUNNEL_LATENCY_MS=200
+      # - MIC_SOURCE=
     devices:
       - /dev/dri:/dev/dri
       - /dev/input:/dev/input

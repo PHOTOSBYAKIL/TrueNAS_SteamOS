@@ -68,7 +68,6 @@ RUN pacman -Syu --noconfirm && \
     vulkan-tools \
     mesa-utils \
     noise-suppression-for-voice \
-    libwebrtc-audio-processing \
     ladspa \
     swh-plugins \
     && pacman -Scc --noconfirm

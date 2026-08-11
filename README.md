@@ -104,8 +104,10 @@ recovers automatically in a few seconds. It never touches video/input routing.
 ### Recovery toolbar (close frozen games)
 
 When a game freezes/crashes during a stream there is no taskbar to reach, so
-the box ships a **recovery toolbar**: a slim bar pinned to the bottom (overlay
-mode = always visible, even over fullscreen games) with clickable buttons:
+the box ships a **recovery toolbar** — **Waybar** (`extra/waybar`, Wayland
+gtk-layer-shell), a slim bar pinned to the bottom. It sits on layer `top`, so
+it hides behind fullscreen games and never covers them — over Steam Big
+Picture / the desktop it is visible with clickable buttons:
 
 * **`[X] Close`** — close the focused game gracefully (`swaymsg kill`), then
   force-kill its process tree if it hangs.
@@ -113,7 +115,7 @@ mode = always visible, even over fullscreen games) with clickable buttons:
   Steam Big Picture.
 * **`[S] Kill Steam`** — quit Steam and stop the box (start it again from the
   TrueNAS Apps UI).
-* **`[B] Hide Bar`** — toggle the bar hidden/visible.
+* **`[M] Minimize`** — hide the bar.
 
 The same actions are on hotkeys, which work even when a crashed game covers
 the whole screen (Sunshine's input reaches sway via uinput/libinput):
@@ -123,7 +125,7 @@ the whole screen (Sunshine's input reaches sway via uinput/libinput):
 | `Mod4+Ctrl+Shift+Q` | Close focused game |
 | `Mod4+Ctrl+Shift+R` | Force-restart focused game |
 | `Mod4+Ctrl+Shift+X` | Kill Steam / stop the box |
-| `Mod4+Ctrl+Shift+B` | Toggle bar visibility |
+| `Mod4+Ctrl+Shift+B` | Reveal the bar over the current game (un-fullscreens it) |
 
 `Mod4` = the Super/Windows key. See `steamtools/README.md` for details.
 

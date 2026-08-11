@@ -37,6 +37,11 @@ mkdir -p "$HOME/steamtools"
 cp -n /usr/local/lib/steamtools/* "$HOME/steamtools/" 2>/dev/null || true
 chown -R "${PUID}:${PGID}" "$HOME/steamtools" 2>/dev/null || true
 
+# Waybar config + CSS for the toolbar (also copy-once).
+mkdir -p "$HOME/.config/waybar"
+cp -n /usr/local/lib/steamos-waybar/* "$HOME/.config/waybar/" 2>/dev/null || true
+chown -R "${PUID}:${PGID}" "$HOME/.config/waybar" 2>/dev/null || true
+
 echo "=== [SteamOS Container] Starting system services (D-Bus + NetworkManager) ==="
 # Steam needs NetworkManager's D-Bus API for network state; sway needs D-Bus too.
 sudo dbus-uuidgen --ensure 2>/dev/null || true

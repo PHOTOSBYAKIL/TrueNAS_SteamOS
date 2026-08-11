@@ -51,6 +51,7 @@ RUN pacman -Syu --noconfirm && \
     sway \
     swaybg \
     swayidle \
+    waybar \
     xorg-xwayland \
     seatd \
     pipewire \
@@ -95,6 +96,10 @@ COPY sway.config /etc/sway/config
 # /home/steam bind mount cannot shadow them; the entrypoint copies them into
 # $HOME/steamtools on boot. See steamtools/README for usage.
 COPY --chown=steam:steam steamtools/ /usr/local/lib/steamtools/
+
+# Waybar config + CSS for the recovery toolbar (seeded into $HOME/.config/waybar
+# on boot by the entrypoint; same "copy only if missing" rule as steamtools).
+COPY --chown=steam:steam waybar/ /usr/local/lib/steamos-waybar/
 
 # VirtualHere USB client — lets controllers plugged into the Moonlight client
 # (Mac) appear as real USB devices in this container (needs the vhci_hcd kernel

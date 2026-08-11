@@ -91,6 +91,11 @@ RUN chmod +x /usr/local/bin/entrypoint.sh
 # param amdgpu.virtual_display=desc:1920x1080 for GPU rendering.
 COPY sway.config /etc/sway/config
 
+# Recovery toolbar scripts. Installed under /usr/local/lib (NOT $HOME) so the
+# /home/steam bind mount cannot shadow them; the entrypoint copies them into
+# $HOME/steamtools on boot. See steamtools/README for usage.
+COPY --chown=steam:steam steamtools/ /usr/local/lib/steamtools/
+
 # VirtualHere USB client — lets controllers plugged into the Moonlight client
 # (Mac) appear as real USB devices in this container (needs the vhci_hcd kernel
 # module on the host). Connect it by setting VH_SERVER=<ip> in the container env.

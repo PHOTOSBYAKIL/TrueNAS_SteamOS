@@ -29,6 +29,14 @@ sudo chown -R "${PUID}:${PGID}" "$XDG_RUNTIME_DIR" 2>/dev/null || true
 sudo chmod 0700 "$XDG_RUNTIME_DIR" 2>/dev/null || true
 chown -R "${PUID}:${PGID}" "$HOME" 2>/dev/null || true
 
+echo "=== [SteamOS Container] Seeding recovery toolbar ==="
+# Copy the toolbar scripts into the mounted home dir once (cp -n never
+# overwrites user edits, so this is safe on every boot). The sway config
+# references /home/steam/steamtools for these.
+mkdir -p "$HOME/steamtools"
+cp -n /usr/local/lib/steamtools/* "$HOME/steamtools/" 2>/dev/null || true
+chown -R "${PUID}:${PGID}" "$HOME/steamtools" 2>/dev/null || true
+
 echo "=== [SteamOS Container] Starting system services (D-Bus + NetworkManager) ==="
 # Steam needs NetworkManager's D-Bus API for network state; sway needs D-Bus too.
 sudo dbus-uuidgen --ensure 2>/dev/null || true

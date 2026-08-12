@@ -5,9 +5,11 @@
 # capture/encoder. Pick the compose template for your hardware below.
 
 # ============================================================================
-# TEMPLATE A — AMD & Intel (KMS capture + VA-API)
+# TEMPLATE A — AMD & Intel
 #
-# Pass /dev/dri into the container. Headless output needs a virtual display:
+# Pass /dev/dri into the container. Default capture is X11 (gamescope embedded
+# in Xvfb) and needs NOTHING on the host. Optional zero-copy capture:
+#   - set CAPTURE=kms below, AND
 #   - AMD:   TrueNAS -> System -> Advanced -> Kernel Parameters:
 #            amdgpu.virtual_display=0000:c5:00.0,1   (then reboot)
 #            (use your GPU's PCI ID from `lspci`, or the generic `all,1`;
@@ -33,6 +35,7 @@ services:
       - TZ=America/New_York
       # - GAMESCOPE_RES=1920x1080
       # - GAMESCOPE_REFRESH=60
+      # - CAPTURE=kms     # zero-copy KMS capture (AMD/Intel, needs virtual display)
       # Microphone from the Moonlight client (e.g. a Mac running PulseAudio).
       - MIC_SERVER=192.168.86.42
       - AUDIO_MIC_ENABLED=true

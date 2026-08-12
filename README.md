@@ -12,8 +12,10 @@ on AMD, Intel and NVIDIA hosts.
   (Proton-CachyOS, umu-launcher, protontricks).
 - **UI:** gamescope → Steam `-gamepadui` (Steam Deck-style, isolated frame
   pacing, optional FSR upscaling).
-- **Streaming:** Sunshine — **KMS capture + VA-API encode** on AMD/Intel,
-  **X11 capture + NVENC** on NVIDIA. Audio via a PipeWire null sink.
+- **Streaming:** Sunshine — **X11 capture** by default (gamescope embedded in a
+  headless Xvfb; works on ANY host, no kernel params). AMD/Intel hosts with a
+  virtual display can opt into zero-copy **KMS capture** with `CAPTURE=kms`.
+  Encode is VA-API (AMD/Intel) or NVENC (NVIDIA). Audio via a PipeWire null sink.
 - **Mic:** optional tunnel from the Moonlight client's PulseAudio (e.g. a Mac)
   with rnnoise noise suppression.
 - **Recovery:** a frozen game is killed from Moonlight (host app list →
@@ -32,6 +34,14 @@ The image is built automatically from this repo and published to
 * `cachyos-gaming-meta` provides the full gaming userspace (Proton-CachyOS,
   Wine, umu, protontricks) preinstalled.
 
+## How the display works
+
+By default the container runs **gamescope embedded in a headless Xvfb** and
+Sunshine captures the X framebuffer (X11 capture) — this needs **no kernel
+parameters and works on any hardware**. For lower-latency zero-copy streaming
+on AMD/Intel, set `CAPTURE=kms` in the compose environment; that requires a
+virtual display on the host (see below).
+
 ## Install on TrueNAS (manual — appears in your Apps list)
 
 The container is a **Custom App** (docker-compose based), so it shows up and is
@@ -48,19 +58,20 @@ managed from the TrueNAS Apps UI like any other app.
 
 First start takes a few minutes (Steam downloads/updates itself).
 
-### Host requirements (headless display)
+### Host requirements
 
-The GPU needs a virtual output to render to. This is host-side and documented
-per vendor:
+The default **X11** capture mode needs nothing beyond the devices already in
+the compose file. **KMS** capture (`CAPTURE=kms`) is optional and needs a
+virtual output on the host:
 
-| GPU | What to set |
+| GPU | What to set (only for `CAPTURE=kms`) |
 |---|---|
 | **AMD** | TrueNAS → System → Advanced → Kernel Parameters: `amdgpu.virtual_display=0000:c5:00.0,1` (use your GPU's PCI ID from `lspci`, or `all,1`), then reboot. (Verify: `cat /proc/cmdline \| grep virtual`.) |
 | **Intel** | i915 EDID firmware (`video=DP-1:e drm_kms_helper.edid_firmware=edid/1920x1080.bin`) or the `vkms` module to create a virtual output. |
-| **NVIDIA** | `nvidia-drm.modeset=1` + deploy with the NVIDIA Container Toolkit runtime (Template B). |
+| **NVIDIA** | KMS capture is not supported (NVIDIA always uses the X11 path). |
 
-Without a virtual output, gamescope cannot present frames and the stream will
-be black/software-rendered.
+Without a virtual output, `CAPTURE=kms` will not be able to present frames;
+the entrypoint logs a clear warning.
 
 ### Using it
 
@@ -130,6 +141,7 @@ Environment variables:
 | `MIC_SOURCE` | *(empty)* | Pin to a specific Mac mic name, or empty = follow Mac default |
 | `GAMESCOPE_RES` | `1920x1080` | Gamescope output resolution |
 | `GAMESCOPE_REFRESH` | `60` | Gamescope refresh rate |
+| `CAPTURE` | `x11` | `x11` = works anywhere; `kms` = zero-copy (AMD/Intel, needs virtual display) |
 
 An **audio supervisor** keeps the stack healthy: if the mic drops/reconnects,
 a Bluetooth device switches, or the Mac's PulseAudio restarts, routing
@@ -157,12 +169,12 @@ See `steamtools/README.md` for how the process-tree kill works under gamescope.
   attaches them. If input stops, reconnect Moonlight (a fresh session recreates
   the devices); the trigger only fires when a new device appears.
 
-* **Proton / Windows games crash at launch or stream is black** — gamescope
-  must be able to present to a GPU output. Verify the host virtual display is
-  active (`cat /proc/cmdline | grep virtual` on AMD; EDID/vkms on Intel) and
-  that `/dev/dri/renderD128` exists inside the container
-  (`ls /dev/dri` in the app shell). The entrypoint logs a clear warning if no
-  connected DRM output is found. NOTE: the virtual-display parameter is
+* **Stream is black / gamescope fails to present** — the default X11 capture
+  path needs nothing special. If you set `CAPTURE=kms`, gamescope must be able
+  to present to a GPU output: verify the host virtual display is active
+  (`cat /proc/cmdline | grep virtual` on AMD; EDID/vkms on Intel) and that
+  `/dev/dri/renderD128` exists inside the container (`ls /dev/dri` in the app
+  shell). NOTE: the virtual-display parameter is
   `amdgpu.virtual_display=<PCI>,<count>` — the `desc:1920x1080` form creates
   ZERO crtcs and never worked.
 

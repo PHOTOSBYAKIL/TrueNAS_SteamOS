@@ -5,17 +5,20 @@ set -o pipefail
 #
 # Boot order:
 #   D-Bus -> NetworkManager -> PipeWire (+ null sink / mic tunnel / rnnoise)
-#        -> seatd -> gamescope (DRM standalone for AMD/Intel, embedded in
-#           Xvfb for NVIDIA) -> Steam (Gamepad UI) -> Sunshine (KMS/VA-API
-#           for AMD/Intel, X11/NVENC for NVIDIA).
+#        -> seatd -> Xvfb (headless) -> gamescope (embedded) -> Steam (Gamepad
+#           UI) -> Sunshine (X11 capture; VA-API on AMD/Intel, NVENC on NVIDIA).
 #
-# GPU / capture are auto-detected from lspci — no vendor env needed.
+# Capture is auto-detected by default to X11 (works on ANY host, no kernel
+# params). Set CAPTURE=kms for zero-copy KMS capture on AMD/Intel hosts that
+# have a virtual display configured.
+#
+# GPU drivers (Vulkan/VA-API) are auto-detected from lspci — no vendor env
+# needed.
 #
 # Host requirements (documented in README):
-#   - AMD:  amdgpu.virtual_display=<PCI_ADDR>,<count>  e.g. 0000:c5:00.0,1
-#   - Intel: i915 EDID firmware (or vkms) to create a virtual output
+#   - default (x11): /dev/dri, /dev/input, /dev/uinput passed in. Nothing else.
+#   - CAPTURE=kms on AMD: amdgpu.virtual_display=<PCI_ADDR>,<count>
 #   - NVIDIA: nvidia-drm.modeset=1 + nvidia-container-toolkit runtime
-#   - /dev/dri, /dev/input, /dev/uinput passed into the container.
 
 PUID=${PUID:-1000}
 PGID=${PGID:-1000}
@@ -52,8 +55,13 @@ fi
 VK_DEVICE=$(echo "$PCI_GPU" | sed -n 's/.*\[\([0-9A-Fa-f]\{4\}:[0-9A-Fa-f]\{4\}\)\].*/\1/p' | tr 'a-f' 'A-F')
 echo "GPU: $GPU_VENDOR ($VK_DEVICE) — $PCI_GPU"
 
-# Per-vendor env + streaming config (Sunshine capture/encoder must match).
-CAPTURE_BACKEND=kms
+# Streaming mode. Default is x11: gamescope embedded in a headless Xvfb and
+# Sunshine grabs the X framebuffer — works on ANY host with no special kernel
+# params. `CAPTURE=kms` opts into zero-copy KMS capture (AMD/Intel hosts that
+# have a working virtual display, e.g. amdgpu.virtual_display=0000:c5:00.0,1).
+export CAPTURE=${CAPTURE:-x11}
+
+# Per-vendor env + encoder selection.
 ENCODER=vaapi
 ADAPTER=/dev/dri/renderD128
 OUTPUT_NAME=""
@@ -61,33 +69,30 @@ GS_EXTRA_ARGS=()
 
 case "$GPU_VENDOR" in
   nvidia)
-    echo "NVIDIA detected — NVENC + X11 capture (gamescope embedded in Xvfb)"
+    echo "NVIDIA detected — NVENC encoder"
     export __NV_PRIME_RENDER_OFFLOAD=1
     export __GLX_VENDOR_LIBRARY_NAME=nvidia
     export VK_DRIVER_FILES=/usr/share/vulkan/icd.d/nvidia_icd.json
-    CAPTURE_BACKEND=x11
     ENCODER=nvenc
     ADAPTER=nvidia
-    OUTPUT_NAME=0
     ;;
   intel)
-    echo "Intel detected — ANV + KMS capture + VA-API (iHD)"
+    echo "Intel detected — VA-API (iHD) encoder"
     export LIBVA_DRIVER_NAME=iHD
-    CAPTURE_BACKEND=kms
-    ENCODER=vaapi
     ;;
   amd|*)
-    echo "AMD/other detected — RADV + KMS capture + VA-API (radeonsi)"
+    echo "AMD/other detected — VA-API (radeonsi) encoder"
     export RADV_PERFTEST=gpl
     export AMD_VULKAN_ICD=RADV
     export LIBVA_DRIVER_NAME=radeonsi
-    CAPTURE_BACKEND=kms
-    ENCODER=vaapi
     ;;
 esac
 
-# Find a connected output (kms only) so Sunshine pins the right connector.
-if [ "$CAPTURE_BACKEND" = "kms" ]; then
+# Pick the capture backend. NVIDIA has no KMS capture; AMD/Intel only use KMS
+# when explicitly requested (needs a virtual display on the host).
+CAPTURE_BACKEND=x11
+if [ "$CAPTURE" = "kms" ] && [ "$GPU_VENDOR" != "nvidia" ]; then
+  CAPTURE_BACKEND=kms
   for c in /sys/class/drm/card*-*/status; do
     [ -f "$c" ] || continue
     [ "$(cat "$c" 2>/dev/null)" = "connected" ] || continue
@@ -96,13 +101,15 @@ if [ "$CAPTURE_BACKEND" = "kms" ]; then
     break
   done
   if [ -z "$OUTPUT_NAME" ]; then
-    echo "!!! WARNING: no connected DRM output found in the container."
-    echo "!!! gamescope will fail to start. On a headless AMD box set the host"
-    echo "!!! kernel parameter: amdgpu.virtual_display=<PCI_ADDR>,1"
-    echo "!!!   e.g. amdgpu.virtual_display=0000:c5:00.0,1   (TrueNAS -> System"
-    echo "!!!        -> Advanced -> Kernel Parameters, then reboot)"
-    echo "!!! Intel hosts need an EDID firmware / vkms virtual output."
+    echo "!!! WARNING: CAPTURE=kms but no connected DRM output found in the"
+    echo "!!! container. gamescope will fail to start. On a headless AMD box"
+    echo "!!! set the host kernel parameter: amdgpu.virtual_display=<PCI>,1"
+    echo "!!!   e.g. amdgpu.virtual_display=0000:c5:00.0,1  (TrueNAS -> System"
+    echo "!!!        -> Advanced -> Kernel Parameters, then reboot), or use"
+    echo "!!! the default CAPTURE=x11 which needs nothing."
   fi
+else
+  OUTPUT_NAME=0   # X11 capture: display :0
 fi
 
 echo "=== [SteamOS Container] Preparing runtime ==="
@@ -278,10 +285,10 @@ echo "=== [SteamOS Container] Starting seatd ==="
 sudo seatd -g video >/tmp/seatd.log 2>&1 &
 sleep 1
 
-echo "=== [SteamOS Container] Starting display ($GPU_VENDOR) ==="
-# NVIDIA cannot use KMS capture, so run gamescope embedded in a headless
-# Xvfb and have Sunshine grab the X root window (X11/NVENC path).
-if [ "$GPU_VENDOR" = "nvidia" ]; then
+echo "=== [SteamOS Container] Starting display (${CAPTURE_BACKEND}) ==="
+# x11 capture: run gamescope embedded in a headless Xvfb and have Sunshine
+# grab the X framebuffer (works on any hardware, no kernel params needed).
+if [ "$CAPTURE_BACKEND" = "x11" ]; then
   sudo -u "$USER_NAME" env HOME="$HOME" \
     Xvfb :0 -screen 0 "${GS_W}x${GS_H}x24" -nolisten tcp >/tmp/xvfb.log 2>&1 &
   sleep 2
@@ -404,12 +411,12 @@ echo "=== [SteamOS Container] Audio supervisor ==="
   done
 ) &
 
-echo "=== [SteamOS Container] Launching gamescope + Steam ($GPU_VENDOR) ==="
-# AMD/Intel: force the DRM standalone backend (no DISPLAY/WAYLAND_DISPLAY).
-# NVIDIA:    DISPLAY is set -> gamescope auto-selects the SDL backend and
-#            presents as a fullscreen X client inside the headless Xvfb.
+echo "=== [SteamOS Container] Launching gamescope + Steam ($GPU_VENDOR / ${CAPTURE_BACKEND}) ==="
+# x11: DISPLAY set -> gamescope auto-selects the SDL backend, presenting as a
+#      fullscreen X client inside the headless Xvfb.
+# kms: no DISPLAY/WAYLAND_DISPLAY -> gamescope uses the DRM standalone backend.
 GS_EXTRA_ENV=(-u WAYLAND_DISPLAY)
-if [ "$GPU_VENDOR" = "nvidia" ]; then
+if [ "$CAPTURE_BACKEND" = "x11" ]; then
   GS_EXTRA_ENV+=(DISPLAY="$DISPLAY" SDL_VIDEODRIVER=x11)
 else
   GS_EXTRA_ENV+=(-u DISPLAY)

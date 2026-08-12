@@ -35,6 +35,12 @@ FROM cachyos/cachyos-v3:latest
 # `sunshine` and `gamescope` (plus the cachyos-gaming stack) come from the
 # CachyOS repos, so the external LizardByte repo is not required.
 #
+# pacman 7.x sandboxes its post-transaction hooks (systemd-hook etc.) in a
+# network namespace. That fails inside Docker/buildx (no CAP_SYS_ADMIN /
+# user namespace) with "could not isolate the network (Operation not
+# permitted)" -> every hook errors and pacman exits 1. Disable the sandbox.
+RUN printf '\n[options]\nDisableSandbox = yes\nDisableSandboxNetwork = yes\n' >> /etc/pacman.conf
+#
 # 1. Full system + universal runtime. Drivers for ALL vendors are installed so
 #    the same image runs on AMD, Intel and NVIDIA boxes; the entrypoint picks
 #    the active one at boot.

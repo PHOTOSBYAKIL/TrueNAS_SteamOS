@@ -38,8 +38,9 @@ FROM cachyos/cachyos-v3:latest
 # pacman 7.x sandboxes its post-transaction hooks (systemd-hook etc.) in a
 # network namespace. That fails inside Docker/buildx (no CAP_SYS_ADMIN /
 # user namespace) with "could not isolate the network (Operation not
-# permitted)" -> every hook errors and pacman exits 1. Disable the sandbox.
-RUN printf '\n[options]\nDisableSandbox = yes\nDisableSandboxNetwork = yes\n' >> /etc/pacman.conf
+# permitted)" -> every hook errors and pacman exits 1. The CachyOS pacman
+# fork reads the option as a bare flag inside the FIRST [options] section.
+RUN sed -i '0,/^\[options\]/s//[options]\nDisableSandbox/' /etc/pacman.conf
 #
 # 1. Full system + universal runtime. Drivers for ALL vendors are installed so
 #    the same image runs on AMD, Intel and NVIDIA boxes; the entrypoint picks

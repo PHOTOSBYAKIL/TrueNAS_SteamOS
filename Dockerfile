@@ -48,7 +48,9 @@ RUN sed -i '0,/^\[options\]/s//[options]\nDisableSandbox/' /etc/pacman.conf
 #
 #    NOTE: mesa-git/lib32-mesa-git (CachyOS patched Mesa) are used instead of
 #    stock mesa because cachyos-gaming-meta -> wine-cachyos-opt depends on
-#    mesa-git, which conflicts with stock mesa + vulkan-mesa-implicit-layers.
+#    mesa-git. mesa-git BUNDLES the RADV + ANV drivers, so the split
+#    vulkan-radeon / vulkan-intel / vulkan-mesa-implicit-layers packages are
+#    intentionally NOT installed (they conflict with mesa-git).
 RUN pacman -Syu --noconfirm && \
     pacman -S --noconfirm --needed \
     base-devel \
@@ -76,10 +78,6 @@ RUN pacman -Syu --noconfirm && \
     lib32-mesa-git \
     vulkan-icd-loader \
     lib32-vulkan-icd-loader \
-    vulkan-radeon \
-    lib32-vulkan-radeon \
-    vulkan-intel \
-    lib32-vulkan-intel \
     intel-media-driver \
     nvidia-utils \
     lib32-nvidia-utils \

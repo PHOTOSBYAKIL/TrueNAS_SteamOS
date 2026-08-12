@@ -1,28 +1,19 @@
 #!/bin/bash
-# Graceful close of the focused game: ask the window to close, wait up to
-# 10s, then force-kill the process tree if it hangs. Steam is left running.
+# Emergency close of the running game under gamescope: force-kill the whole
+# Proton/game process tree (by SteamLaunch AppId root) so Steam returns to the
+# Gamepad UI. Steam itself is left running. (There is no compositor close
+# under gamescope, so this is a force-kill by design.)
 source "$(dirname "$0")/common.sh"
 steam_env
 LOG=/tmp/steamtools.log
-get_focused
-echo "$(date) close-game: pid=$PID class=$CLASS name=$NAME" >> "$LOG"
+get_game_pid
+echo "$(date) close-game: game_pid=$GAME_PID" >> "$LOG"
 
-if [ -z "$PID" ] || [ "$PID" -le 1 ] || [[ "$CLASS" == steam ]]; then
-  echo "$(date) close-game: nothing to close (Steam or empty window focused)" >> "$LOG"
+if [ -z "$GAME_PID" ]; then
+  echo "$(date) close-game: no game running (Steam or idle)" >> "$LOG"
   exit 0
 fi
 
-# Ask the compositor to close the window gracefully (WM_DELETE / Wayland close).
-swaymsg kill >/dev/null 2>&1
-
-for _ in $(seq 1 10); do
-  if ! kill -0 "$PID" 2>/dev/null; then
-    echo "$(date) close-game: closed gracefully (pid $PID)" >> "$LOG"
-    exit 0
-  fi
-  sleep 1
-done
-
-echo "$(date) close-game: window closed but pid $PID still alive — force-killing tree" >> "$LOG"
-kill_tree "$PID"
+kill_tree "$GAME_PID"
+echo "$(date) close-game: force-closed game (pid $GAME_PID)" >> "$LOG"
 exit 0

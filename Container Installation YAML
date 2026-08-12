@@ -9,7 +9,9 @@
 #
 # Pass /dev/dri into the container. Headless output needs a virtual display:
 #   - AMD:   TrueNAS -> System -> Advanced -> Kernel Parameters:
-#            amdgpu.virtual_display=desc:1920x1080   (then reboot)
+#            amdgpu.virtual_display=0000:c5:00.0,1   (then reboot)
+#            (use your GPU's PCI ID from `lspci`, or the generic `all,1`;
+#             the old `desc:1920x1080` form creates ZERO crtcs and never worked)
 #   - Intel: i915 EDID firmware or vkms (see README) to create a virtual output
 # ============================================================================
 services:

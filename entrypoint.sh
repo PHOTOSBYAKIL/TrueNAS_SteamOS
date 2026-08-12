@@ -12,7 +12,7 @@ set -o pipefail
 # GPU / capture are auto-detected from lspci — no vendor env needed.
 #
 # Host requirements (documented in README):
-#   - AMD:  amdgpu.virtual_display=desc:1920x1080   (TrueNAS kernel params)
+#   - AMD:  amdgpu.virtual_display=<PCI_ADDR>,<count>  e.g. 0000:c5:00.0,1
 #   - Intel: i915 EDID firmware (or vkms) to create a virtual output
 #   - NVIDIA: nvidia-drm.modeset=1 + nvidia-container-toolkit runtime
 #   - /dev/dri, /dev/input, /dev/uinput passed into the container.
@@ -95,6 +95,14 @@ if [ "$CAPTURE_BACKEND" = "kms" ]; then
     OUTPUT_NAME=${name#card*-}                 # Virtual-1
     break
   done
+  if [ -z "$OUTPUT_NAME" ]; then
+    echo "!!! WARNING: no connected DRM output found in the container."
+    echo "!!! gamescope will fail to start. On a headless AMD box set the host"
+    echo "!!! kernel parameter: amdgpu.virtual_display=<PCI_ADDR>,1"
+    echo "!!!   e.g. amdgpu.virtual_display=0000:c5:00.0,1   (TrueNAS -> System"
+    echo "!!!        -> Advanced -> Kernel Parameters, then reboot)"
+    echo "!!! Intel hosts need an EDID firmware / vkms virtual output."
+  fi
 fi
 
 echo "=== [SteamOS Container] Preparing runtime ==="
@@ -113,6 +121,7 @@ chown -R "${PUID}:${PGID}" "$HOME/steamtools" 2>/dev/null || true
 echo "=== [SteamOS Container] Starting system services (D-Bus + NetworkManager) ==="
 sudo dbus-uuidgen --ensure 2>/dev/null || true
 sudo mkdir -p /run/dbus
+sudo rm -f /run/dbus/pid   # stale pid from a previous container run blocks dbus
 sudo dbus-daemon --system --fork
 sudo NetworkManager
 

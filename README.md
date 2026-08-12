@@ -55,7 +55,7 @@ per vendor:
 
 | GPU | What to set |
 |---|---|
-| **AMD** | TrueNAS → System → Advanced → Kernel Parameters: `amdgpu.virtual_display=desc:1920x1080`, then reboot. (Verify: `cat /proc/cmdline \| grep virtual`.) |
+| **AMD** | TrueNAS → System → Advanced → Kernel Parameters: `amdgpu.virtual_display=0000:c5:00.0,1` (use your GPU's PCI ID from `lspci`, or `all,1`), then reboot. (Verify: `cat /proc/cmdline \| grep virtual`.) |
 | **Intel** | i915 EDID firmware (`video=DP-1:e drm_kms_helper.edid_firmware=edid/1920x1080.bin`) or the `vkms` module to create a virtual output. |
 | **NVIDIA** | `nvidia-drm.modeset=1` + deploy with the NVIDIA Container Toolkit runtime (Template B). |
 
@@ -161,7 +161,10 @@ See `steamtools/README.md` for how the process-tree kill works under gamescope.
   must be able to present to a GPU output. Verify the host virtual display is
   active (`cat /proc/cmdline | grep virtual` on AMD; EDID/vkms on Intel) and
   that `/dev/dri/renderD128` exists inside the container
-  (`ls /dev/dri` in the app shell).
+  (`ls /dev/dri` in the app shell). The entrypoint logs a clear warning if no
+  connected DRM output is found. NOTE: the virtual-display parameter is
+  `amdgpu.virtual_display=<PCI>,<count>` — the `desc:1920x1080` form creates
+  ZERO crtcs and never worked.
 
 * **Sunshine chooses the wrong capture** — the entrypoint seeds
   `capture = kms` (AMD/Intel) or `capture = x11` + `encoder = nvenc`

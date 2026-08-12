@@ -45,6 +45,10 @@ RUN sed -i '0,/^\[options\]/s//[options]\nDisableSandbox/' /etc/pacman.conf
 # 1. Full system + universal runtime. Drivers for ALL vendors are installed so
 #    the same image runs on AMD, Intel and NVIDIA boxes; the entrypoint picks
 #    the active one at boot.
+#
+#    NOTE: mesa-git/lib32-mesa-git (CachyOS patched Mesa) are used instead of
+#    stock mesa because cachyos-gaming-meta -> wine-cachyos-opt depends on
+#    mesa-git, which conflicts with stock mesa + vulkan-mesa-implicit-layers.
 RUN pacman -Syu --noconfirm && \
     pacman -S --noconfirm --needed \
     base-devel \
@@ -68,13 +72,12 @@ RUN pacman -Syu --noconfirm && \
     lib32-libpulse \
     libinput \
     wayland-utils \
-    mesa \
-    lib32-mesa \
+    mesa-git \
+    lib32-mesa-git \
     vulkan-icd-loader \
     lib32-vulkan-icd-loader \
     vulkan-radeon \
     lib32-vulkan-radeon \
-    libva-mesa-driver \
     vulkan-intel \
     lib32-vulkan-intel \
     intel-media-driver \

@@ -1,20 +1,21 @@
 # TrueNAS_SteamOS — Container Installation
 #
 # The container auto-detects the GPU (AMD / Intel / NVIDIA) at boot and picks
-# the matching drivers, Vulkan device, gamescope backend and Sunshine
-# capture/encoder. Pick the compose template for your hardware below.
+# the matching drivers, Vulkan device and Sunshine encoder. Capture is always
+# wlr-screencopy from the sway headless virtual output — no kernel params
+# needed. Pick the compose template for your hardware below.
 
 # ============================================================================
 # TEMPLATE A — AMD & Intel
 #
-# Pass /dev/dri into the container. Default capture is X11 (gamescope embedded
-# in Xvfb) and needs NOTHING on the host. Optional zero-copy capture:
-#   - set CAPTURE=kms below, AND
+# Pass /dev/dri into the container. On AMD, the optional kernel parameter
+# amdgpu.virtual_display keeps GPU rendering/DMA-BUFs clean (nice-to-have, not
+# required — sway's headless output does not depend on it):
 #   - AMD:   TrueNAS -> System -> Advanced -> Kernel Parameters:
 #            amdgpu.virtual_display=0000:c5:00.0,1   (then reboot)
 #            (use your GPU's PCI ID from `lspci`, or the generic `all,1`;
 #             the old `desc:1920x1080` form creates ZERO crtcs and never worked)
-#   - Intel: i915 EDID firmware or vkms (see README) to create a virtual output
+#   - Intel: nothing needed for wlr capture.
 # ============================================================================
 services:
   steamos:
@@ -35,7 +36,6 @@ services:
       - TZ=America/New_York
       # - GAMESCOPE_RES=1920x1080
       # - GAMESCOPE_REFRESH=60
-      # - CAPTURE=kms     # zero-copy KMS capture (AMD/Intel, needs virtual display)
       # Microphone from the Moonlight client (e.g. a Mac running PulseAudio).
       - MIC_SERVER=192.168.86.42
       - AUDIO_MIC_ENABLED=true
@@ -54,12 +54,11 @@ services:
     restart: unless-stopped
 
 # ============================================================================
-# TEMPLATE B — NVIDIA (X11 capture + NVENC)
+# TEMPLATE B — NVIDIA (wlr capture + NVENC)
 #
-# NVIDIA cannot use KMS capture; the entrypoint detects NVIDIA and runs
-# gamescope embedded in a headless Xvfb with X11/NVENC streaming. You must use
-# the NVIDIA Container Toolkit runtime and set nvidia-drm.modeset=1 on the
-# host. On TrueNAS this means deploying with the NVIDIA runtime reserved.
+# NVIDIA uses wlr-screencopy capture from the sway output and NVENC encoding.
+# You must use the NVIDIA Container Toolkit runtime and set nvidia-drm.modeset=1
+# on the host. On TrueNAS this means deploying with the NVIDIA runtime reserved.
 # ============================================================================
 services:
   steamos:

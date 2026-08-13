@@ -1,0 +1,36 @@
+{
+    // Recovery toolbar for the headless sway (Wayland) gaming box.
+    // Layer "top" = visible above normal windows (Steam Big Picture), hidden
+    // behind fullscreen games so it never covers them. To reach it over a
+    // frozen fullscreen game press Mod4+Ctrl+Shift+B (reveal-bar.sh drops the
+    // game out of fullscreen, which makes this bar visible and clickable).
+    "layer": "top",
+    "position": "bottom",
+    "height": 26,
+    "spacing": 6,
+    "modules-left": ["custom/close", "custom/restart"],
+    "modules-center": [],
+    "modules-right": ["custom/killsteam", "custom/minimize"],
+
+    "custom/close": {
+        "format": " [X] Close ",
+        "on-click": "sh -c 'sleep 0.1; /home/steam/steamtools/close-game.sh & disown'",
+        "tooltip": false
+    },
+    "custom/restart": {
+        "format": " [R] Restart ",
+        "on-click": "sh -c 'sleep 0.1; /home/steam/steamtools/restart-game.sh & disown'",
+        "tooltip": false
+    },
+    "custom/killsteam": {
+        "format": " [S] Kill Steam ",
+        "on-click": "sh -c 'sleep 0.1; /home/steam/steamtools/kill-steam.sh & disown'",
+        "tooltip": false
+    },
+    "custom/minimize": {
+        "format": " [M] Minimize ",
+        // SIGUSR1 toggles waybar visibility (waybar(5) SIGNALS).
+        "on-click": "killall -SIGUSR1 waybar",
+        "tooltip": false
+    }
+}

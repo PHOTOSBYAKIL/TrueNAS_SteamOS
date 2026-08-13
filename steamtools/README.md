@@ -1,11 +1,18 @@
 # steamos recovery tools
 
-Force-close tools for the headless **gamescope** session, so a frozen
-fullscreen game can be killed from Moonlight without rebooting the box.
+Force-close tools for the headless **sway + nested gamescope** box, so a
+frozen fullscreen game can be killed from Moonlight without rebooting the
+machine.
 
-Under gamescope there is no window manager to talk to (no sway, no waybar), so
-the recovery actions are exposed as **Sunshine apps** and launched straight
-from the Moonlight client app list:
+Recovery actions are exposed three ways:
+
+1. **Sway hotkeys** (work even over a frozen fullscreen game, since Sunshine's
+   input is a uinput device that sway's libinput backend sees):
+   `Mod4+Ctrl+Shift+Q` close, `+R` force-restart, `+X` kill Steam,
+   `+B` reveal the waybar toolbar (un-fullscreens the gamescope surface).
+2. **Waybar toolbar** (layer-top, bottom): `[X] Close`, `[R] Restart`,
+   `[S] Kill Steam`, `[M] Minimize` buttons — clickable once revealed.
+3. **Sunshine apps** launched straight from the Moonlight client app list.
 
 | App (Moonlight) | Script | Action |
 |---|---|---|
@@ -18,8 +25,8 @@ from the Moonlight client app list:
 - `common.sh` — `kill_tree` walks `/proc` up to the `SteamLaunch AppId=`
   reaper root and takes the whole Proton tree down (leaving Steam itself
   running). `get_game_pid` scans `/proc` for the most recently started
-  `SteamLaunch AppId=` process — no window list exists under gamescope, so
-  this replaces the old sway "focused window" lookup. Steam's own client
+  `SteamLaunch AppId=` process — Steam runs inside a nested gamescope, so
+  there is no sway window list of game windows to query; Steam's own client
   process never has `SteamLaunch AppId=` in its cmdline, so it is never
   matched.
 - The three apps are merged into Sunshine's `apps.json` on first boot by the

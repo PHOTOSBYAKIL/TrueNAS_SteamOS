@@ -1,23 +1,24 @@
 #!/bin/bash
 set -o pipefail
 
-# TrueNAS_SteamOS — universal headless CachyOS gamescope streaming container.
+# TrueNAS_SteamOS — universal headless CachyOS sway + gamescope streaming box.
 #
 # Boot order:
 #   D-Bus -> NetworkManager -> PipeWire (+ null sink / mic tunnel / rnnoise)
-#        -> seatd -> Xvfb (headless) -> gamescope (embedded) -> Steam (Gamepad
-#           UI) -> Sunshine (X11 capture; VA-API on AMD/Intel, NVENC on NVIDIA).
+#        -> seatd -> sway (headless + libinput, virtual output) -> nested
+#           gamescope -> Steam (Gamepad UI) -> Sunshine (wlr-screencopy capture;
+#           VA-API on AMD/Intel, NVENC on NVIDIA).
 #
-# Capture is auto-detected by default to X11 (works on ANY host, no kernel
-# params). Set CAPTURE=kms for zero-copy KMS capture on AMD/Intel hosts that
-# have a virtual display configured.
+# Capture is ALWAYS wlr-screencopy from the sway virtual output — works on any
+# host, no kernel params required. (On AMD hosts the optional
+# amdgpu.virtual_display=<PCI>,<count> kernel param keeps the GPU rendering +
+# DMA-BUFs working, but sway's headless output does not depend on it.)
 #
 # GPU drivers (Vulkan/VA-API) are auto-detected from lspci — no vendor env
 # needed.
 #
 # Host requirements (documented in README):
-#   - default (x11): /dev/dri, /dev/input, /dev/uinput passed in. Nothing else.
-#   - CAPTURE=kms on AMD: amdgpu.virtual_display=<PCI_ADDR>,<count>
+#   - /dev/dri, /dev/input, /dev/uinput passed in. Nothing else.
 #   - NVIDIA: nvidia-drm.modeset=1 + nvidia-container-toolkit runtime
 
 PUID=${PUID:-1000}
@@ -55,17 +56,12 @@ fi
 VK_DEVICE=$(echo "$PCI_GPU" | sed -n 's/.*\[\([0-9A-Fa-f]\{4\}:[0-9A-Fa-f]\{4\}\)\].*/\1/p' | tr 'a-f' 'A-F')
 echo "GPU: $GPU_VENDOR ($VK_DEVICE) — $PCI_GPU"
 
-# Streaming mode. Default is x11: gamescope embedded in a headless Xvfb and
-# Sunshine grabs the X framebuffer — works on ANY host with no special kernel
-# params. `CAPTURE=kms` opts into zero-copy KMS capture (AMD/Intel hosts that
-# have a working virtual display, e.g. amdgpu.virtual_display=0000:c5:00.0,1).
-export CAPTURE=${CAPTURE:-x11}
-
-# Per-vendor env + encoder selection.
+# Per-vendor env + encoder selection. The compositor stack is the same for
+# every GPU: sway (headless + libinput) drives the virtual output and gamescope
+# runs NESTED on top of it; Sunshine uses wlr-screencopy capture. Only the
+# encoder differs (VA-API on AMD/Intel, NVENC on NVIDIA).
 ENCODER=vaapi
 ADAPTER=/dev/dri/renderD128
-OUTPUT_NAME=""
-GS_EXTRA_ARGS=()
 
 case "$GPU_VENDOR" in
   nvidia)
@@ -88,30 +84,6 @@ case "$GPU_VENDOR" in
     ;;
 esac
 
-# Pick the capture backend. NVIDIA has no KMS capture; AMD/Intel only use KMS
-# when explicitly requested (needs a virtual display on the host).
-CAPTURE_BACKEND=x11
-if [ "$CAPTURE" = "kms" ] && [ "$GPU_VENDOR" != "nvidia" ]; then
-  CAPTURE_BACKEND=kms
-  for c in /sys/class/drm/card*-*/status; do
-    [ -f "$c" ] || continue
-    [ "$(cat "$c" 2>/dev/null)" = "connected" ] || continue
-    name=$(basename "$(dirname "$c")")        # card0-Virtual-1
-    OUTPUT_NAME=${name#card*-}                 # Virtual-1
-    break
-  done
-  if [ -z "$OUTPUT_NAME" ]; then
-    echo "!!! WARNING: CAPTURE=kms but no connected DRM output found in the"
-    echo "!!! container. gamescope will fail to start. On a headless AMD box"
-    echo "!!! set the host kernel parameter: amdgpu.virtual_display=<PCI>,1"
-    echo "!!!   e.g. amdgpu.virtual_display=0000:c5:00.0,1  (TrueNAS -> System"
-    echo "!!!        -> Advanced -> Kernel Parameters, then reboot), or use"
-    echo "!!! the default CAPTURE=x11 which needs nothing."
-  fi
-else
-  OUTPUT_NAME=0   # X11 capture: display :0
-fi
-
 echo "=== [SteamOS Container] Preparing runtime ==="
 sudo mkdir -p "$XDG_RUNTIME_DIR" "$XDG_RUNTIME_DIR/pipewire" "$XDG_RUNTIME_DIR/pulse" "$XDG_RUNTIME_DIR/dbus-1"
 sudo chown -R "${PUID}:${PGID}" "$XDG_RUNTIME_DIR" 2>/dev/null || true
@@ -124,6 +96,12 @@ echo "=== [SteamOS Container] Seeding recovery tools ==="
 mkdir -p "$HOME/steamtools"
 cp -n /usr/local/lib/steamtools/* "$HOME/steamtools/" 2>/dev/null || true
 chown -R "${PUID}:${PGID}" "$HOME/steamtools" 2>/dev/null || true
+
+# Waybar toolbar (Close/Restart/Kill Steam buttons) — sway.config exec's waybar,
+# which reads ~/.config/waybar/. Seed it the same way (cp -n, never overwrite).
+mkdir -p "$HOME/.config/waybar"
+cp -n /usr/local/lib/steamos-waybar/* "$HOME/.config/waybar/" 2>/dev/null || true
+chown -R "${PUID}:${PGID}" "$HOME/.config/waybar" 2>/dev/null || true
 
 echo "=== [SteamOS Container] Starting system services (D-Bus + NetworkManager) ==="
 sudo dbus-uuidgen --ensure 2>/dev/null || true
@@ -285,16 +263,30 @@ echo "=== [SteamOS Container] Starting seatd ==="
 sudo seatd -g video >/tmp/seatd.log 2>&1 &
 sleep 1
 
-echo "=== [SteamOS Container] Starting display (${CAPTURE_BACKEND}) ==="
-# x11 capture: run gamescope embedded in a headless Xvfb and have Sunshine
-# grab the X framebuffer (works on any hardware, no kernel params needed).
-if [ "$CAPTURE_BACKEND" = "x11" ]; then
-  sudo -u "$USER_NAME" env HOME="$HOME" \
-    Xvfb :0 -screen 0 "${GS_W}x${GS_H}x24" -nolisten tcp >/tmp/xvfb.log 2>&1 &
-  sleep 2
-  export DISPLAY=:0
-  GS_EXTRA_ARGS+=(-f)
-fi
+echo "=== [SteamOS Container] Starting sway (headless + libinput) ==="
+# headless = virtual compositor output; libinput = Sunshine's uinput devices.
+# WLR_LIBINPUT_NO_DEVICES=1 lets libinput start empty and pick up devices via
+# udev when a Moonlight client connects.
+SWAY_ENV="XDG_RUNTIME_DIR=$XDG_RUNTIME_DIR
+XDG_SESSION_TYPE=wayland
+XDG_CURRENT_DESKTOP=sway
+XDG_SESSION_DESKTOP=sway
+HOME=$HOME
+DBUS_SESSION_BUS_ADDRESS=$DBUS_SESSION_BUS_ADDRESS
+PIPEWIRE_RUNTIME_DIR=$XDG_RUNTIME_DIR/pipewire
+WLR_BACKENDS=headless,libinput
+WLR_LIBINPUT_NO_DEVICES=1
+SWAYSOCK=$XDG_RUNTIME_DIR/sway-ipc.sock"
+
+sudo -u "$USER_NAME" env $SWAY_ENV sway -c /etc/sway/config >/tmp/sway.log 2>&1 &
+SWAY_PID=$!
+export WAYLAND_DISPLAY=wayland-1
+
+# Wait for sway to be ready
+for i in $(seq 1 20); do
+  [ -S "$XDG_RUNTIME_DIR/sway-ipc.sock" ] && break
+  sleep 1
+done
 
 echo "=== [SteamOS Container] Seeding Sunshine config ==="
 SUNCONF="$HOME/.config/sunshine/sunshine.conf"
@@ -305,18 +297,17 @@ if [ ! -s "$SUNCONF" ] || ! grep -q "capture = " "$SUNCONF"; then
   cat > "$SUNCONF" <<EOF
 origin_web_ui_allowed = lan
 csrf_allowed_origins = https://${LAN_IP}:47990
-capture = ${CAPTURE_BACKEND}
+capture = wlr
 encoder = ${ENCODER}
 adapter_name = ${ADAPTER}
 audio_sink = sunshine-null
 EOF
-  [ -n "$OUTPUT_NAME" ] && echo "output_name = ${OUTPUT_NAME}" >> "$SUNCONF"
-  echo "Wrote Sunshine config ($CAPTURE_BACKEND/$ENCODER, CSRF https://${LAN_IP}:47990)"
+  echo "Wrote Sunshine config (wlr/$ENCODER, CSRF https://${LAN_IP}:47990)"
 fi
 
 # Recovery apps (Close Game / Restart Steam / Kill Steam) — launchable from
-# Moonlight. Replaces the old sway/waybar toolbar; merged into the Sunshine
-# apps.json without clobbering user-added apps.
+# Moonlight, in addition to the sway hotkeys/waybar toolbar. Merged into the
+# Sunshine apps.json without clobbering user-added apps.
 echo "=== [SteamOS Container] Seeding Sunshine recovery apps ==="
 sudo -u "$USER_NAME" env HOME="$HOME" python3 - <<'PYEOF'
 import json, os
@@ -343,13 +334,12 @@ os.makedirs(os.path.dirname(p), exist_ok=True)
 json.dump({"apps": apps}, open(p, "w"), indent=4)
 PYEOF
 
-echo "=== [SteamOS Container] Starting Sunshine (${CAPTURE_BACKEND} capture) ==="
+echo "=== [SteamOS Container] Starting Sunshine (wlr capture) ==="
 SUN_ENV="XDG_RUNTIME_DIR=$XDG_RUNTIME_DIR
 HOME=$HOME
 DBUS_SESSION_BUS_ADDRESS=$DBUS_SESSION_BUS_ADDRESS
-XDG_SESSION_TYPE=wayland"
-[ -n "${DISPLAY:-}" ] && SUN_ENV="$SUN_ENV
-DISPLAY=$DISPLAY"
+XDG_SESSION_TYPE=wayland
+WAYLAND_DISPLAY=$WAYLAND_DISPLAY"
 sudo -u "$USER_NAME" env $SUN_ENV sunshine >/tmp/sunshine.log 2>&1 &
 
 echo "=== [SteamOS Container] Starting VirtualHere USB client ==="
@@ -411,24 +401,19 @@ echo "=== [SteamOS Container] Audio supervisor ==="
   done
 ) &
 
-echo "=== [SteamOS Container] Launching gamescope + Steam ($GPU_VENDOR / ${CAPTURE_BACKEND}) ==="
-# x11: DISPLAY set -> gamescope auto-selects the SDL backend, presenting as a
-#      fullscreen X client inside the headless Xvfb.
-# kms: no DISPLAY/WAYLAND_DISPLAY -> gamescope uses the DRM standalone backend.
-GS_EXTRA_ENV=(-u WAYLAND_DISPLAY)
-if [ "$CAPTURE_BACKEND" = "x11" ]; then
-  GS_EXTRA_ENV+=(DISPLAY="$DISPLAY" SDL_VIDEODRIVER=x11)
-else
-  GS_EXTRA_ENV+=(-u DISPLAY)
-fi
-sudo -u "$USER_NAME" env "${GS_EXTRA_ENV[@]}" \
-  XDG_RUNTIME_DIR="$XDG_RUNTIME_DIR" HOME="$HOME" \
+echo "=== [SteamOS Container] Launching gamescope (nested) + Steam ($GPU_VENDOR) ==="
+# gamescope runs NESTED under sway: WAYLAND_DISPLAY is set, so gamescope
+# auto-selects the Wayland backend and presents as a fullscreen surface on
+# sway's output. Steam runs inside gamescope (FSR/frame-pacing), Sunshine
+# captures sway via wlr-screencopy.
+sudo -u "$USER_NAME" env XDG_RUNTIME_DIR="$XDG_RUNTIME_DIR" HOME="$HOME" \
   DBUS_SESSION_BUS_ADDRESS="$DBUS_SESSION_BUS_ADDRESS" \
   PIPEWIRE_RUNTIME_DIR="$XDG_RUNTIME_DIR/pipewire" \
+  WAYLAND_DISPLAY="$WAYLAND_DISPLAY" \
+  XDG_SESSION_TYPE=wayland \
   dbus-run-session -- gamescope -e -o 1 -r "$GAMESCOPE_REFRESH" \
-    -W "$GS_W" -H "$GS_H" --generate-drm-mode fixed \
+    -W "$GS_W" -H "$GS_H" -f \
     ${VK_DEVICE:+--prefer-vk-device "$VK_DEVICE"} \
-    ${GS_EXTRA_ARGS[@]} \
     -- steam -gamepadui -silent "$@" >/tmp/gamescope.log 2>&1
 
 echo "=== [SteamOS Container] Steam/gamescope exited — stopping container ==="

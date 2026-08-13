@@ -1,6 +1,8 @@
 #!/bin/bash
-# Shared helpers for the TrueNAS_SteamOS recovery tools (gamescope edition).
-# No sway/waybar — recovery actions are launched as Sunshine apps from Moonlight.
+# Shared helpers for the TrueNAS_SteamOS recovery tools.
+# The box runs sway (headless) + a nested gamescope session. Recovery actions
+# are exposed BOTH as sway hotkeys / waybar buttons AND as Sunshine apps
+# launched from Moonlight; both call these scripts.
 
 steam_env() {
   export XDG_RUNTIME_DIR=${XDG_RUNTIME_DIR:-/run/user/1000}

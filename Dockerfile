@@ -4,15 +4,16 @@
 # A universal, headless SteamOS-style gaming container built on CachyOS
 # (x86-64-v3 / AVX2) for TrueNAS SCALE, Unraid or Proxmox. Works on AMD,
 # Intel and NVIDIA hosts; the entrypoint auto-detects the GPU and picks the
-# right drivers, Vulkan device, gamescope backend and Sunshine capture/encoder.
+# right drivers, Vulkan device and Sunshine encoder.
 #
 #   - Base:  cachyos/cachyos-v3  (x86-64-v3 userspace — last 10 years of CPUs)
-#   - UI:    gamescope (micro-compositor, Steam `-gamepadui`)
-#   - GPU:   auto-detected: AMD/Intel -> RADV/ANV + KMS capture + VA-API;
-#            NVIDIA            -> NVENC + X11 capture (gamescope embedded in Xvfb)
+#   - UI:    sway (headless virtual output) + nested gamescope (Steam `-gamepadui`)
+#   - GPU:   auto-detected: AMD/Intel -> RADV/ANV + VA-API; NVIDIA -> NVENC
+#   - Capture: Sunshine wlr-screencopy from the sway virtual output (no kernel
+#            params, works on every host)
 #   - Audio: PipeWire null sink + optional client-mic tunnel + rnnoise
-#   - Recovery: Sunshine "apps" (Close Game / Restart Steam / Kill Steam)
-#               launchable from Moonlight — no waybar needed under gamescope.
+#   - Recovery: waybar toolbar + sway hotkeys + Sunshine "apps"
+#               (Close Game / Restart Steam / Kill Steam) — see steamtools/
 #
 # The image is built automatically from this repo and published to:
 #   ghcr.io/photosbyakil/truenas_steamos:main
@@ -65,7 +66,6 @@ RUN pacman -Syu --noconfirm && \
     networkmanager \
     seatd \
     xorg-xwayland \
-    xorg-server-xvfb \
     pipewire \
     pipewire-pulse \
     wireplumber \
@@ -74,6 +74,10 @@ RUN pacman -Syu --noconfirm && \
     lib32-libpulse \
     libinput \
     wayland-utils \
+    sway \
+    swaybg \
+    swayidle \
+    waybar \
     mesa-git \
     lib32-mesa-git \
     vulkan-icd-loader \
@@ -96,9 +100,9 @@ RUN pacman -Syu --noconfirm && \
     swh-plugins \
     && pacman -Scc --noconfirm
 
-# Sunshine's KMS (kmsgrab) capture needs CAP_SYS_ADMIN. Harmless in a
-# privileged container, but lets the KMS path work in non-privileged deploys
-# too. (Not used by the X11/NVIDIA path, so the XDG-portal conflict is moot.)
+# Sunshine's wlr-screencopy capture does not need CAP_SYS_ADMIN (the old KMS
+# path did). The setcap is harmless in a privileged container and enables the
+# KMS path if someone opts in, so it stays for compatibility.
 RUN setcap cap_sys_admin+eip "$(command -v sunshine)" 2>/dev/null || true
 
 # 2. Create non-root user 'steam'
@@ -116,10 +120,18 @@ RUN usermod -aG video,audio,input ${USER}
 COPY --chown=steam:steam entrypoint.sh /usr/local/bin/entrypoint.sh
 RUN chmod +x /usr/local/bin/entrypoint.sh
 
+# Headless sway config (WLR_BACKENDS=headless,libinput). sway drives the
+# virtual output; gamescope runs NESTED on top of it for games.
+COPY sway.config /etc/sway/config
+
 # Recovery scripts. Installed under /usr/local/lib (NOT $HOME) so the
 # /home/steam bind mount cannot shadow them; the entrypoint copies them into
 # $HOME/steamtools on boot. See steamtools/README for usage.
 COPY --chown=steam:steam steamtools/ /usr/local/lib/steamtools/
+
+# Waybar config + CSS for the recovery toolbar (seeded into $HOME/.config/waybar
+# on boot by the entrypoint; same "copy only if missing" rule as steamtools).
+COPY --chown=steam:steam waybar/ /usr/local/lib/steamos-waybar/
 
 # VirtualHere USB client — lets controllers plugged into the Moonlight client
 # (e.g. a Mac) appear as real USB devices in this container (needs the vhci_hcd

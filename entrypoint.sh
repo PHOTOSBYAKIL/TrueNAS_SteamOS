@@ -245,6 +245,28 @@ EOF
   echo "Wrote Sunshine config (wlr capture, CSRF origin https://${LAN_IP}:47990)"
 fi
 
+# Sunshine's process manager aborts the whole parse when apps.json lacks an
+# "env" key ("No such node (env)") — the parser throws, Sunshine aborts at
+# startup, and /applist goes empty. The volume may carry a stale apps.json
+# from an older image (the CachyOS experiment wrote one without env), so
+# always heal the file before launching. This is idempotent.
+APPS="$HOME/.config/sunshine/apps.json"
+if [ -f "$APPS" ]; then
+  python3 - "$APPS" <<'PYEOF'
+import json, sys
+p = sys.argv[1]
+try:
+    data = dict(json.load(open(p)))
+except Exception:
+    data = {}
+data.setdefault("env", {})
+if "apps" not in data:
+    data["apps"] = []
+json.dump(data, open(p, "w"), indent=4)
+PYEOF
+  echo "Healed Sunshine apps.json (ensured apps + env keys)"
+fi
+
 echo "=== [SteamOS Container] Starting Sunshine (wlr capture) ==="
 sudo -u "$USER_NAME" env XDG_RUNTIME_DIR="$XDG_RUNTIME_DIR" HOME="$HOME" \
   WAYLAND_DISPLAY="$WAYLAND_DISPLAY" DISPLAY=:0 \

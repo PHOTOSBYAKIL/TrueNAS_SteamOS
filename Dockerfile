@@ -82,6 +82,9 @@ RUN pacman -Syu --noconfirm && \
     lib32-mesa-git \
     vulkan-icd-loader \
     lib32-vulkan-icd-loader \
+    vulkan-validation-layers \
+    gamemode \
+    lib32-gamemode \
     intel-media-driver \
     nvidia-utils \
     lib32-nvidia-utils \

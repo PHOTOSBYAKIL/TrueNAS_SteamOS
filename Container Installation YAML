@@ -1,107 +1,56 @@
-# TrueNAS_SteamOS — Container Installation
-#
-# The container auto-detects the GPU (AMD / Intel / NVIDIA) at boot and picks
-# the matching drivers, Vulkan device and Sunshine encoder. Capture is always
-# wlr-screencopy from the sway headless virtual output — no kernel params
-# needed. Pick the compose template for your hardware below.
-
-# ============================================================================
-# TEMPLATE A — AMD & Intel
-#
-# Pass /dev/dri into the container. On AMD, the optional kernel parameter
-# amdgpu.virtual_display keeps GPU rendering/DMA-BUFs clean (nice-to-have, not
-# required — sway's headless output does not depend on it):
-#   - AMD:   TrueNAS -> System -> Advanced -> Kernel Parameters:
-#            amdgpu.virtual_display=0000:c5:00.0,1   (then reboot)
-#            (use your GPU's PCI ID from `lspci`, or the generic `all,1`;
-#             the old `desc:1920x1080` form creates ZERO crtcs and never worked)
-#   - Intel: nothing needed for wlr capture.
-# ============================================================================
 services:
   steamos:
+    # Built automatically from this repo: Arch Linux + Steam + Sunshine
     image: ghcr.io/photosbyakil/truenas_steamos:main
-    container_name: truenas-steamos
     network_mode: host
-    privileged: true          # uinput, DRM master, gamescope direct render
-    ipc: host                 # shared memory for Sunshine/gamescope frames
-    shm_size: 2g
-    devices:
-      - /dev/dri:/dev/dri
-      - /dev/input:/dev/input
-      - /dev/uinput:/dev/uinput
-      # VirtualHere USB controller passthrough (optional):
-      # - /dev/bus/usb:/dev/bus/usb
-      # - /dev/vhci:/dev/vhci
     environment:
+      - PULSE_SERVER=unix:/tmp/pulseaudio.socket
       - TZ=America/New_York
-      # - GAMESCOPE_RES=1920x1080
-      # - GAMESCOPE_REFRESH=60
-      # Microphone from the Moonlight client (e.g. a Mac running PulseAudio).
+      # IP of the Mac running Moonlight + the VirtualHere USB Server. Change to
+      # your Mac's IP. This forwards your USB/Bluetooth controllers to the box.
+      - VH_SERVER=192.168.86.42
+      # Microphone from the Moonlight client (Mac). The box tunnels the Mac's
+      # PulseAudio default mic and (optionally) noise-suppresses it with rnnoise.
+      # Change MIC_SERVER to your Mac's IP. Set AUDIO_MIC_ENABLED=false to disable.
       - MIC_SERVER=192.168.86.42
       - AUDIO_MIC_ENABLED=true
       - AUDIO_NOISE_SUPPRESSION=true
       # - AUDIO_ECHO_CANCEL=false
-      # VirtualHere USB server IP (controllers -> box): optional
-      # - VH_SERVER=192.168.86.42
-    ulimits:
-      nofile: { soft: 1048576, hard: 1048576 }   # esync/fsync file handles
-      memlock: { soft: -1, hard: -1 }
-    volumes:
-      # Steam home + library (use a fast SSD pool path on your TrueNAS)
-      - /mnt/GAMING_1TB_SSD/apps/steamos/home:/home/steam
-      # Lets gamescope attach Sunshine's virtual input devices (uinput)
-      - /run/udev:/run/udev:rw
-    restart: unless-stopped
-
-# ============================================================================
-# TEMPLATE B — NVIDIA (wlr capture + NVENC)
-#
-# NVIDIA uses wlr-screencopy capture from the sway output and NVENC encoding.
-# You must use the NVIDIA Container Toolkit runtime and set nvidia-drm.modeset=1
-# on the host. On TrueNAS this means deploying with the NVIDIA runtime reserved.
-# ============================================================================
-services:
-  steamos:
-    image: ghcr.io/photosbyakil/truenas_steamos:main
-    container_name: truenas-steamos
-    network_mode: host
-    privileged: true
-    ipc: host
-    shm_size: 2g
-    deploy:
-      resources:
-        reservations:
-          devices:
-            - driver: nvidia
-              count: 1
-              capabilities: [gpu, video, compute, utility]
+      # - AUDIO_TUNNEL_LATENCY_MS=200
+      # - MIC_SOURCE=
     devices:
+      - /dev/dri:/dev/dri
       - /dev/input:/dev/input
       - /dev/uinput:/dev/uinput
-    environment:
-      - TZ=America/New_York
-      - NVIDIA_VISIBLE_DEVICES=all
-      - NVIDIA_DRIVER_CAPABILITIES=all
-      - MIC_SERVER=192.168.86.42
-      - AUDIO_MIC_ENABLED=true
-      - AUDIO_NOISE_SUPPRESSION=true
-    ulimits:
-      nofile: { soft: 1048576, hard: 1048576 }
-      memlock: { soft: -1, hard: -1 }
+      # Needed for VirtualHere to create the virtual USB controllers
+      - /dev/bus/usb:/dev/bus/usb
+      # Needed for VirtualHere's USB client (vhci_hcd control device)
+      - /dev/vhci:/dev/vhci
     volumes:
+      # Steam home + library lives here. Use a pool path that exists on your
+      # TrueNAS (a fast SSD pool is recommended). Example uses GAMING_1TB_SSD.
       - /mnt/GAMING_1TB_SSD/apps/steamos/home:/home/steam
+      # Required so Xorg can attach Sunshine's virtual input devices (uinput)
+      # to the display — without this, mouse/keyboard/gamepad won't reach Steam.
       - /run/udev:/run/udev:rw
+    ipc: host
+    privileged: true
     restart: unless-stopped
 
 # ============================================================================
-# NOTES
+# NOTES FOR OTHER USERS
 # ============================================================================
 # IMPORTANT: Do NOT run this container alongside any OTHER Sunshine host
 # (including Wolf / Games on Whales, or a second SteamOS instance) on the same
 # machine. Sunshine and Wolf are both Moonlight streaming servers and claim the
 # same ports (47984/47989 TCP and 47999/48010/48100/48200 UDP), so one of them
-# will fail to start ("Address already in use"). Only one streaming host may
-# own the Moonlight ports at a time.
+# will fail to start ("Address already in use").
+#
+#   - Run this box INSTEAD of Wolf, or
+#   - Run it on a separate machine/NAS, or
+#   - If you really must run both, stop Wolf (or change Sunshine's ports) first.
+#
+# Only one streaming host may own the Moonlight ports at a time.
 #
 # TROUBLESHOOTING: If the Sunshine web UI shows "CSRF Protection Error" when
 # you set up your username/password, edit the config in your mounted volume at
@@ -112,6 +61,4 @@ services:
 # brackets (bracket form like ["https://..."] is parsed literally and never
 # matches). The entrypoint normally seeds this automatically; only needed if
 # your IP changed or the config was edited.
-#
-# RECOVERY: A frozen game is killed from Moonlight -> host app list ->
-# "Close Game" / "Restart Steam" (or "Kill Steam" to stop the whole box).
+

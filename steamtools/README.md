@@ -1,43 +1,62 @@
-# steamos recovery tools
+# steamos recovery toolbar
 
-Force-close tools for the headless **sway + nested gamescope** box, so a
-frozen fullscreen game can be killed from Moonlight without rebooting the
-machine.
+Kill/restart buttons + hotkeys for the headless sway session, so a frozen
+fullscreen game can be closed from Moonlight without rebooting the box.
 
-Recovery actions are exposed three ways:
+The toolbar is **Waybar** (`extra/waybar`, gtk-layer-shell — Wayland-native,
+no i3bar/JSON status protocol). It sits on layer **top** at the bottom, so it
+is hidden behind fullscreen games and never covers them; it is visible over
+Steam Big Picture / the desktop. Use the hotkeys (always work, even over a
+frozen game) or reveal the bar over a game with `Mod4+Ctrl+Shift+B`.
 
-1. **Sway hotkeys** (work even over a frozen fullscreen game, since Sunshine's
-   input is a uinput device that sway's libinput backend sees):
-   `Mod4+Ctrl+Shift+Q` close, `+R` force-restart, `+X` kill Steam,
-   `+B` reveal the waybar toolbar (un-fullscreens the gamescope surface).
-2. **Waybar toolbar** (layer-top, bottom): `[X] Close`, `[R] Restart`,
-   `[S] Kill Steam`, `[M] Minimize` buttons — clickable once revealed.
-3. **Sunshine apps** launched straight from the Moonlight client app list.
+## Buttons (bottom bar)
 
-| App (Moonlight) | Script | Action |
-|---|---|---|
-| `Close Game` | `close-game.sh` | Force-kill the running game's Proton process tree → back to Steam Gamepad UI |
-| `Restart Steam` | `restart-game.sh` | Same engine, labelled as a hard restart (frozen games) |
-| `Kill Steam` | `kill-steam.sh` | Quit Steam → gamescope exits → container stops (start from TrueNAS Apps UI) |
+| Button | Action |
+|---|---|
+| `[X] Close` | Graceful window close (`swaymsg kill`), force-kill the game tree after 10s |
+| `[R] Restart` | Emergency force-close of the focused game → back to Steam Big Picture |
+| `[S] Kill Steam` | Quit Steam → container stops (restart from TrueNAS Apps UI) |
+| `[M] Minimize` | Hide the bar (SIGUSR1 toggle; show again with `Mod4+Ctrl+Shift+B`) |
+
+## Hotkeys (same actions, work even over a frozen fullscreen game)
+
+| Combo | Action |
+|---|---|
+| `Mod4+Ctrl+Shift+Q` | Close focused game |
+| `Mod4+Ctrl+Shift+R` | Force-restart focused game (back to Steam) |
+| `Mod4+Ctrl+Shift+X` | Kill Steam / stop the box |
+| `Mod4+Ctrl+Shift+B` | Reveal the bar over the current game (un-fullscreens it) |
+
+`Mod4` = the Super/Windows key. Keys reach sway because Sunshine's virtual
+input is a uinput device picked up by sway's libinput backend.
 
 ## How it works
 
-- `common.sh` — `kill_tree` walks `/proc` up to the `SteamLaunch AppId=`
-  reaper root and takes the whole Proton tree down (leaving Steam itself
-  running). `get_game_pid` scans `/proc` for the most recently started
-  `SteamLaunch AppId=` process — Steam runs inside a nested gamescope, so
-  there is no sway window list of game windows to query; Steam's own client
-  process never has `SteamLaunch AppId=` in its cmdline, so it is never
-  matched.
-- The three apps are merged into Sunshine's `apps.json` on first boot by the
-  entrypoint (never clobbering apps you added in the Sunshine web UI).
-- Logs: `/tmp/steamtools.log` inside the container.
+- `waybar/config.jsonc` + `waybar/style.css` — toolbar definition: custom
+  modules with native `on-click` handlers calling the scripts (detached via
+  `sh -c '... & disown'` to avoid the waybar pointer-grab re-fire issue).
+- `reveal-bar.sh` — un-fullscreens the focused game (if `steam_app_*`) so the
+  top-layer bar becomes visible over it, and un-hides the bar if minimized.
+- `close-game.sh` — graceful close, escalates to a force-kill.
+- `restart-game.sh` — force-kills the focused game's whole Proton process tree
+  (walks /proc up to the `SteamLaunch AppId=` root), leaving Steam running.
+- `kill-steam.sh` — quits Steam, which ends the entrypoint and stops the box.
+- `common.sh` — shared sway-IPC helpers (focused-window parser, kill_tree).
+
+Logs: `/tmp/steamtools.log` inside the container.
+
+## Why not swaybar?
+
+swaybar's `status_command` sends **SIGTERM to the status child's process group**
+a few seconds after spawn (`status_line_free` in sway 1.12), killing any status
+script — even a perfect i3bar one — which is why the first attempt showed
+`[invalid i3bar json]`. Waybar renders natively via gtk-layer-shell and has no
+such status-command lifecycle, so buttons/clicks are reliable.
 
 ## Deployment
 
-The image ships the scripts under `/usr/local/lib/steamtools/`; the entrypoint
-copies them into the bind-mounted `$HOME/steamtools` on boot (`cp -n`, never
-overwrites edits) so they can be hot-patched without a rebuild.
-
-The scripts run as the `steam` user (Sunshine's runtime user), so they can read
-`/proc` of games/Steam (same owner) to walk the tree.
+The image ships the scripts under `/usr/local/lib/steamtools/` and the waybar
+config under `/usr/local/lib/steamos-waybar/`; the entrypoint copies both into
+`$HOME/steamtools` and `$HOME/.config/waybar` on boot (`cp -n`, never
+overwrites edits). sway.config launches `waybar` via `exec_always` and has no
+`bar {}` block (so swaybar never runs).

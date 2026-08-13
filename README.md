@@ -1,49 +1,20 @@
 # TrueNAS_SteamOS
 
-A universal, headless SteamOS-style gaming container built on **CachyOS**
-(x86-64-v3 / AVX2) for TrueNAS SCALE, Unraid or Proxmox. Runs **Steam Gamepad
-UI** inside a **gamescope** micro-compositor and streams it to any **Moonlight**
-client via **Sunshine**. GPU is **auto-detected** at boot — the same image runs
-on AMD, Intel and NVIDIA hosts.
+An Arch Linux, SteamOS-style container for TrueNAS with current graphics drivers.
 
-- **Base:** `cachyos/cachyos-v3` — CachyOS userspace compiled for x86-64-v3
-  (AVX2; every AMD/Intel CPU from ~2013/Zen 1 onward), with CachyOS's patched
-  Mesa, `gamescope` and `sunshine` builds plus the `cachyos-gaming-meta` stack
-  (Proton-CachyOS, umu-launcher, protontricks).
-- **UI:** **sway** (headless virtual output) with a **nested gamescope** →
-  Steam `-gamepadui` (Steam Deck-style, isolated frame pacing, optional FSR).
-- **Streaming:** Sunshine **wlr-screencopy capture** from the sway virtual
-  output — no kernel params, works on ANY host. Encode is VA-API (AMD/Intel)
-  or NVENC (NVIDIA). Audio via a PipeWire null sink.
-- **Mic:** optional tunnel from the Moonlight client's PulseAudio (e.g. a Mac)
-  with rnnoise noise suppression.
-- **Recovery:** a frozen game is killed via a **waybar toolbar + sway
-  hotkeys**, or from Moonlight (host app list → `Close Game` / `Restart Steam`
-  / `Kill Steam`).
+Ships a rolling Arch base, so the **Mesa** userspace driver is always the latest
+release (≥ 25.2.1) — required by SteamVR's Steam Link headset driver for Quest VR.
 
 The image is built automatically from this repo and published to
 `ghcr.io/photosbyakil/truenas_steamos:main`.
 
 ## What it does
 
-* Runs **sway** headless (a virtual compositor output) with **Steam** (Gamepad
-  UI) in a nested **gamescope** session.
-* Runs **Sunshine**, so any **Moonlight** client can stream the display
-  (wlr-screencopy capture of the sway output).
-* Runs **PipeWire** audio (null sink → stream), plus optional client-mic tunnel.
-* Auto-detects the GPU and loads the right drivers — AMD (RADV), Intel (ANV),
-  or NVIDIA (proprietary + NVENC).
-* `cachyos-gaming-meta` provides the full gaming userspace (Proton-CachyOS,
-  Wine, umu, protontricks) preinstalled.
-
-## How the display works
-
-**sway** runs headless (`WLR_BACKENDS=headless,libinput`) and creates a virtual
-1920×1080 output. **gamescope** runs **nested** on top of it (a single fullscreen
-Wayland surface) and hosts Steam. **Sunshine** captures the sway output with
-wlr-screencopy. This needs **no kernel parameters and works on any hardware**.
-Sunshine's virtual input devices (uinput) are picked up by sway's libinput
-backend, so sway hotkeys work even over a frozen fullscreen game.
+* Runs **Steam** (Big Picture, `-tenfoot`) inside a headless **sway (Wayland)** session.
+* Runs **Sunshine**, so any Moonlight client can stream the display (games, desktop).
+* Runs **PipeWire** audio, so game audio works over the stream.
+* Provides the GPU (AMD/Intel) + current Mesa to Steam, including 32-bit support.
+* Every window is forced **fullscreen** in sway, so games open on top of Steam.
 
 ## Install on TrueNAS (manual — appears in your Apps list)
 
@@ -52,35 +23,19 @@ managed from the TrueNAS Apps UI like any other app.
 
 1. **Apps → Discover Apps → Custom App**
 2. Give it a name (e.g. `steamos`).
-3. Paste the compose YAML for **your hardware** from the **`Container
-   Installation YAML`** file (Template A = AMD/Intel, Template B = NVIDIA).
+3. Paste the compose YAML from the **`Container Installation YAML`** file.
 4. Adjust the volume path to a pool that exists on your TrueNAS, e.g.
    `/mnt/GAMING_1TB_SSD/apps/steamos/home` (a fast SSD pool is recommended).
-5. Leave `privileged`, `ipc: host`, `shm_size` and the devices as-is.
-6. **Install.**
+5. Leave `privileged` and the devices as-is (GPU, input, uinput).
+6. **Install**.
 
-First start takes a few minutes (Steam downloads/updates itself).
-
-### Host requirements
-
-The wlr-screencopy capture needs nothing beyond the devices already in the
-compose file (`/dev/dri`, `/dev/input`, `/dev/uinput`). On AMD hosts the
-optional kernel parameter `amdgpu.virtual_display=<PCI>,<count>` keeps the GPU
-rendering + DMA-BUFs clean for the capture, but sway's headless output does
-**not** depend on it:
-
-| GPU | Optional kernel param (nice-to-have, not required) |
-|---|---|
-| **AMD** | TrueNAS → System → Advanced → Kernel Parameters: `amdgpu.virtual_display=0000:c5:00.0,1` (use your GPU's PCI ID from `lspci`, or `all,1`), then reboot. (Verify: `cat /proc/cmdline \| grep virtual`.) |
-| **Intel** | None needed for wlr capture. |
-| **NVIDIA** | `nvidia-drm.modeset=1` + NVIDIA Container Toolkit runtime (for NVENC). |
+First start takes a couple of minutes (Steam downloads/updates itself).
 
 ### Using it
 
 * Pair **Moonlight** with this box like any Sunshine host
   (open `http://<nas-ip>:47990`, get the pairing PIN).
-* Steam runs the Gamepad UI on the headless gamescope session. Press
-  `Super+F` inside gamescope to toggle FSR upscaling.
+* Steam runs Big Picture on the headless sway session.
 * For Quest VR via Steam Link: with the box on your LAN, open the **Steam Link**
   app on the Quest and connect to the Steam client here — the current Mesa
   passes SteamVR's driver check.
@@ -141,55 +96,53 @@ Environment variables:
 | `AUDIO_ECHO_CANCEL` | `false` | WebRTC echo cancellation |
 | `AUDIO_TUNNEL_LATENCY_MS` | `200` | Tunnel latency |
 | `MIC_SOURCE` | *(empty)* | Pin to a specific Mac mic name, or empty = follow Mac default |
-| `GAMESCOPE_RES` | `1920x1080` | Gamescope output resolution |
-| `GAMESCOPE_REFRESH` | `60` | Gamescope refresh rate |
 
 An **audio supervisor** keeps the stack healthy: if the mic drops/reconnects,
 a Bluetooth device switches, or the Mac's PulseAudio restarts, routing
 recovers automatically in a few seconds. It never touches video/input routing.
 
-### Recovery (close frozen games)
+### Recovery toolbar (close frozen games)
 
 When a game freezes/crashes during a stream there is no taskbar to reach, so
-the box ships a **waybar toolbar** + **sway hotkeys** plus **Sunshine apps**:
+the box ships a **recovery toolbar** — **Waybar** (`extra/waybar`, Wayland
+gtk-layer-shell), a slim bar pinned to the bottom. It sits on layer `top`, so
+it hides behind fullscreen games and never covers them — over Steam Big
+Picture / the desktop it is visible with clickable buttons:
 
-| How | What |
+* **`[X] Close`** — close the focused game gracefully (`swaymsg kill`), then
+  force-kill its process tree if it hangs.
+* **`[R] Restart`** — emergency force-close of the focused game → back to
+  Steam Big Picture.
+* **`[S] Kill Steam`** — quit Steam and stop the box (start it again from the
+  TrueNAS Apps UI).
+* **`[M] Minimize`** — hide the bar.
+
+The same actions are on hotkeys, which work even when a crashed game covers
+the whole screen (Sunshine's input reaches sway via uinput/libinput):
+
+| Combo | Action |
 |---|---|
-| **Waybar** (bottom toolbar, layer-top) | `[X] Close` `[R] Restart` `[S] Kill Steam` `[M] Minimize` — visible over Steam, hidden behind fullscreen games. |
-| **Sway hotkeys** (work even over a frozen fullscreen game) | `Mod4+Ctrl+Shift+Q` close, `+R` force-restart, `+X` kill Steam, `+B` reveal the toolbar over a game. |
-| **Moonlight app list** | `Close Game`, `Restart Steam`, `Kill Steam` — launched from the Sunshine apps menu. |
+| `Mod4+Ctrl+Shift+Q` | Close focused game |
+| `Mod4+Ctrl+Shift+R` | Force-restart focused game |
+| `Mod4+Ctrl+Shift+X` | Kill Steam / stop the box |
+| `Mod4+Ctrl+Shift+B` | Reveal the bar over the current game (un-fullscreens it) |
 
-| App (Moonlight) | Action |
-|---|---|
-| `Close Game` | Force-kill the running game's Proton process tree → back to Steam |
-| `Restart Steam` | Same engine, for hard-hung games |
-| `Kill Steam` | Quit Steam → gamescope exits → container stops (start again from TrueNAS Apps UI) |
-
-See `steamtools/README.md` for how the process-tree kill works under sway +
-nested gamescope.
+`Mod4` = the Super/Windows key. See `steamtools/README.md` for details.
 
 ### Troubleshooting
 
 * **Mouse / keyboard / controller not working** — the entrypoint auto-creates
   Sunshine's virtual input device nodes in the container (Wolf's mknod
   technique) and re-triggers udev with `--action=add` so sway's libinput
-  backend attaches them. If input stops, reconnect Moonlight (a fresh session
-  recreates the devices); the trigger only fires when a new device appears.
+  attaches them. If input stops, reconnect Moonlight (a fresh session recreates
+  the devices); the trigger only fires when a new device appears.
 
-* **Stream is black / nothing renders** — sway's headless output always
-  exists, so the common causes are: Sunshine started before sway was ready
-  (check `/tmp/sway.log` / `/tmp/sunshine.log` in the app shell), or the GPU
-  encoder failed (see next item). On AMD, adding
-  `amdgpu.virtual_display=0000:c5:00.0,1` to the host kernel params keeps
-  DMA-BUF rendering healthy. NOTE: the old `desc:1920x1080` form of that param
-  creates ZERO crtcs and never worked.
-
-* **Sunshine encoder fails / no encoder** — confirm `/dev/dri/renderD128`
-  exists inside the container (`ls /dev/dri` in the app shell). NVIDIA hosts
-  need `nvidia-drm.modeset=1` + the NVIDIA Container Toolkit runtime. The
-  entrypoint seeds `encoder = vaapi` (AMD/Intel) or `encoder = nvenc` +
-  `adapter_name = nvidia` (NVIDIA) on first boot; override in
-  `<volume>/home/.config/sunshine/sunshine.conf` via the web UI.
+* **Proton / Windows games crash at launch** — the box now uses a headless
+  **sway (Wayland)** compositor, which lets games present directly to the GPU
+  (no DRI3/X11 requirement). This requires the host kernel parameter
+  `amdgpu.virtual_display=desc:1920x1080` (TrueNAS → System → Advanced →
+  Kernel Parameters, then reboot) — without it wlroots falls back to software
+  rendering and games/streaming break. Verify with `cat /proc/cmdline | grep virtual`.
 
 * **"CSRF Protection Error" / "Internal Server Error" on the Sunshine welcome
   page** — the entrypoint auto-seeds `sunshine.conf` with your host's real
@@ -214,6 +167,10 @@ nested gamescope.
 * **No audio in streams** — confirm PipeWire is running in the container
   (`pgrep pipewire` inside the app shell) and that the streamed app is not
   muting the monitor device.
+
+* **Sunshine shows no apps / blank "Apps" page** — `apps.json` is generated on
+  first run; if you replaced the volume, reseed it by restarting the app once,
+  or run `sunshine --creds` / re-pair Moonlight.
 
 ## Building locally
 

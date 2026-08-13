@@ -1,25 +1,13 @@
 #!/bin/bash
 set -o pipefail
 
-# TrueNAS_SteamOS — universal headless CachyOS sway + gamescope streaming box.
+# TrueNAS_SteamOS — headless Wayland (sway) streaming container.
+# Runs: D-Bus -> NetworkManager -> PipeWire -> seatd -> sway (headless+libinput)
+#      -> Steam -> Sunshine (wlr-screencopy capture, VA-API encode).
 #
-# Boot order:
-#   D-Bus -> NetworkManager -> PipeWire (+ null sink / mic tunnel / rnnoise)
-#        -> seatd -> sway (headless + libinput, virtual output) -> nested
-#           gamescope -> Steam (Gamepad UI) -> Sunshine (wlr-screencopy capture;
-#           VA-API on AMD/Intel, NVENC on NVIDIA).
-#
-# Capture is ALWAYS wlr-screencopy from the sway virtual output — works on any
-# host, no kernel params required. (On AMD hosts the optional
-# amdgpu.virtual_display=<PCI>,<count> kernel param keeps the GPU rendering +
-# DMA-BUFs working, but sway's headless output does not depend on it.)
-#
-# GPU drivers (Vulkan/VA-API) are auto-detected from lspci — no vendor env
-# needed.
-#
-# Host requirements (documented in README):
-#   - /dev/dri, /dev/input, /dev/uinput passed in. Nothing else.
-#   - NVIDIA: nvidia-drm.modeset=1 + nvidia-container-toolkit runtime
+# Requires host kernel parameter: amdgpu.virtual_display=desc:1920x1080
+# (System -> Advanced -> Kernel Parameters, then reboot). Without it wlroots
+# falls back to software rendering and games/streaming break.
 
 PUID=${PUID:-1000}
 PGID=${PGID:-1000}
@@ -29,60 +17,11 @@ export XDG_RUNTIME_DIR=/run/user/${PUID}
 
 # Audio configuration (all configurable via env; defaults work out of the box)
 export MIC_SERVER=${MIC_SERVER:-192.168.86.42}          # Moonlight client running PulseAudio
-export AUDIO_MIC_ENABLED=${AUDIO_MIC_ENABLED:-true}      # tunnel the client's mic in
+export AUDIO_MIC_ENABLED=${AUDIO_MIC_ENABLED:-true}      # tunnel the Mac's mic in
 export AUDIO_NOISE_SUPPRESSION=${AUDIO_NOISE_SUPPRESSION:-true}  # rnnoise
 export AUDIO_ECHO_CANCEL=${AUDIO_ECHO_CANCEL:-false}     # WebRTC AEC
 export AUDIO_TUNNEL_LATENCY_MS=${AUDIO_TUNNEL_LATENCY_MS:-200}
 export MIC_SOURCE=${MIC_SOURCE:-}                        # empty = follow the Mac's default mic
-
-# Display (gamescope) settings
-export GAMESCOPE_RES=${GAMESCOPE_RES:-1920x1080}
-export GAMESCOPE_REFRESH=${GAMESCOPE_REFRESH:-60}
-GS_W=${GAMESCOPE_RES%x*}
-GS_H=${GAMESCOPE_RES#*x}
-
-# ============================================================================
-echo "=== [SteamOS Container] Scanning hardware ==="
-# ============================================================================
-PCI_GPU=$(lspci -nn 2>/dev/null | grep -iE 'vga|3d|display' | head -1)
-GPU_VENDOR=unknown
-if echo "$PCI_GPU" | grep -qi nvidia; then
-  GPU_VENDOR=nvidia
-elif echo "$PCI_GPU" | grep -qi 'amd\|ati'; then
-  GPU_VENDOR=amd
-elif echo "$PCI_GPU" | grep -qi intel; then
-  GPU_VENDOR=intel
-fi
-VK_DEVICE=$(echo "$PCI_GPU" | sed -n 's/.*\[\([0-9A-Fa-f]\{4\}:[0-9A-Fa-f]\{4\}\)\].*/\1/p' | tr 'a-f' 'A-F')
-echo "GPU: $GPU_VENDOR ($VK_DEVICE) — $PCI_GPU"
-
-# Per-vendor env + encoder selection. The compositor stack is the same for
-# every GPU: sway (headless + libinput) drives the virtual output and gamescope
-# runs NESTED on top of it; Sunshine uses wlr-screencopy capture. Only the
-# encoder differs (VA-API on AMD/Intel, NVENC on NVIDIA).
-ENCODER=vaapi
-ADAPTER=/dev/dri/renderD128
-
-case "$GPU_VENDOR" in
-  nvidia)
-    echo "NVIDIA detected — NVENC encoder"
-    export __NV_PRIME_RENDER_OFFLOAD=1
-    export __GLX_VENDOR_LIBRARY_NAME=nvidia
-    export VK_DRIVER_FILES=/usr/share/vulkan/icd.d/nvidia_icd.json
-    ENCODER=nvenc
-    ADAPTER=nvidia
-    ;;
-  intel)
-    echo "Intel detected — VA-API (iHD) encoder"
-    export LIBVA_DRIVER_NAME=iHD
-    ;;
-  amd|*)
-    echo "AMD/other detected — VA-API (radeonsi) encoder"
-    export RADV_PERFTEST=gpl
-    export AMD_VULKAN_ICD=RADV
-    export LIBVA_DRIVER_NAME=radeonsi
-    ;;
-esac
 
 echo "=== [SteamOS Container] Preparing runtime ==="
 sudo mkdir -p "$XDG_RUNTIME_DIR" "$XDG_RUNTIME_DIR/pipewire" "$XDG_RUNTIME_DIR/pulse" "$XDG_RUNTIME_DIR/dbus-1"
@@ -90,23 +29,23 @@ sudo chown -R "${PUID}:${PGID}" "$XDG_RUNTIME_DIR" 2>/dev/null || true
 sudo chmod 0700 "$XDG_RUNTIME_DIR" 2>/dev/null || true
 chown -R "${PUID}:${PGID}" "$HOME" 2>/dev/null || true
 
-echo "=== [SteamOS Container] Seeding recovery tools ==="
-# The recovery scripts live in the bind-mounted home dir so they can be
-# hot-patched without a rebuild. cp -n never overwrites user edits.
+echo "=== [SteamOS Container] Seeding recovery toolbar ==="
+# Copy the toolbar scripts into the mounted home dir once (cp -n never
+# overwrites user edits, so this is safe on every boot). The sway config
+# references /home/steam/steamtools for these.
 mkdir -p "$HOME/steamtools"
 cp -n /usr/local/lib/steamtools/* "$HOME/steamtools/" 2>/dev/null || true
 chown -R "${PUID}:${PGID}" "$HOME/steamtools" 2>/dev/null || true
 
-# Waybar toolbar (Close/Restart/Kill Steam buttons) — sway.config exec's waybar,
-# which reads ~/.config/waybar/. Seed it the same way (cp -n, never overwrite).
+# Waybar config + CSS for the toolbar (also copy-once).
 mkdir -p "$HOME/.config/waybar"
 cp -n /usr/local/lib/steamos-waybar/* "$HOME/.config/waybar/" 2>/dev/null || true
 chown -R "${PUID}:${PGID}" "$HOME/.config/waybar" 2>/dev/null || true
 
 echo "=== [SteamOS Container] Starting system services (D-Bus + NetworkManager) ==="
+# Steam needs NetworkManager's D-Bus API for network state; sway needs D-Bus too.
 sudo dbus-uuidgen --ensure 2>/dev/null || true
 sudo mkdir -p /run/dbus
-sudo rm -f /run/dbus/pid   # stale pid from a previous container run blocks dbus
 sudo dbus-daemon --system --fork
 sudo NetworkManager
 
@@ -152,7 +91,7 @@ PWEOF
 chown -R "${PUID}:${PGID}" "$HOME/.config/pipewire" 2>/dev/null || true
 
 echo "=== [SteamOS Container] Configuring microphone (tunnel + processing) ==="
-# Mic input comes from the Moonlight client's PulseAudio over the network.
+# Mic input comes from the Moonlight client's (Mac) PulseAudio over the network.
 # Optional rnnoise noise suppression + WebRTC echo cancellation clean it up.
 # All modules use nofail so PipeWire never crashes if a piece is unavailable.
 mkdir -p "$HOME/.config/pipewire/pipewire.conf.d"
@@ -264,9 +203,9 @@ sudo seatd -g video >/tmp/seatd.log 2>&1 &
 sleep 1
 
 echo "=== [SteamOS Container] Starting sway (headless + libinput) ==="
-# headless = virtual compositor output; libinput = Sunshine's uinput devices.
-# WLR_LIBINPUT_NO_DEVICES=1 lets libinput start empty and pick up devices via
-# udev when a Moonlight client connects.
+# headless = virtual output; libinput = Sunshine's uinput input devices.
+# WLR_LIBINPUT_NO_DEVICES=1 lets libinput start empty and pick up devices
+# via udev when a Moonlight client connects.
 SWAY_ENV="XDG_RUNTIME_DIR=$XDG_RUNTIME_DIR
 XDG_SESSION_TYPE=wayland
 XDG_CURRENT_DESKTOP=sway
@@ -278,7 +217,8 @@ WLR_BACKENDS=headless,libinput
 WLR_LIBINPUT_NO_DEVICES=1
 SWAYSOCK=$XDG_RUNTIME_DIR/sway-ipc.sock"
 
-sudo -u "$USER_NAME" env $SWAY_ENV sway -c /etc/sway/config >/tmp/sway.log 2>&1 &
+sudo -u "$USER_NAME" env $SWAY_ENV sway -c /etc/sway/config \
+  >/tmp/sway.log 2>&1 &
 SWAY_PID=$!
 export WAYLAND_DISPLAY=wayland-1
 
@@ -290,7 +230,7 @@ done
 
 echo "=== [SteamOS Container] Seeding Sunshine config ==="
 SUNCONF="$HOME/.config/sunshine/sunshine.conf"
-if [ ! -s "$SUNCONF" ] || ! grep -q "capture = " "$SUNCONF"; then
+if [ ! -s "$SUNCONF" ] || ! grep -q "capture = wlr" "$SUNCONF"; then
   LAN_IP=$(ip route get 1.1.1.1 2>/dev/null | sed -n 's/.*src \([0-9.]*\).*/\1/p' | head -1)
   [ -z "$LAN_IP" ] && LAN_IP=$(hostname -I 2>/dev/null | awk '{print $1}')
   mkdir -p "$(dirname "$SUNCONF")"
@@ -298,61 +238,23 @@ if [ ! -s "$SUNCONF" ] || ! grep -q "capture = " "$SUNCONF"; then
 origin_web_ui_allowed = lan
 csrf_allowed_origins = https://${LAN_IP}:47990
 capture = wlr
-encoder = ${ENCODER}
-adapter_name = ${ADAPTER}
+encoder = vaapi
+adapter_name = /dev/dri/renderD128
 audio_sink = sunshine-null
 EOF
-  echo "Wrote Sunshine config (wlr/$ENCODER, CSRF https://${LAN_IP}:47990)"
+  echo "Wrote Sunshine config (wlr capture, CSRF origin https://${LAN_IP}:47990)"
 fi
 
-# Recovery apps (Close Game / Restart Steam / Kill Steam) — launchable from
-# Moonlight, in addition to the sway hotkeys/waybar toolbar. Merged into the
-# Sunshine apps.json without clobbering user-added apps.
-echo "=== [SteamOS Container] Seeding Sunshine recovery apps ==="
-sudo -u "$USER_NAME" env HOME="$HOME" python3 - <<'PYEOF'
-import json, os
-p = os.path.join(os.environ["HOME"], ".config/sunshine/apps.json")
-apps = []
-if os.path.exists(p):
-    try:
-        data = json.load(open(p))
-        apps = data.get("apps", []) if isinstance(data, dict) else []
-    except Exception:
-        apps = []
-def add(name, cmd):
-    if not any(a.get("name") == name for a in apps):
-        apps.append({
-            "name": name, "cmd": cmd, "detached": True, "output": "",
-            "image-path": "", "working-dir": "", "prep-cmd": [],
-            "exclude-global-prep-cmd": False, "auto-detach": True,
-            "order": len(apps),
-        })
-add("Close Game", "/home/steam/steamtools/close-game.sh")
-add("Restart Steam", "/home/steam/steamtools/restart-game.sh")
-add("Kill Steam", "/home/steam/steamtools/kill-steam.sh")
-os.makedirs(os.path.dirname(p), exist_ok=True)
-# Sunshine's process manager aborts the whole parse when "env" is absent
-# ("No such node (env)"), leaving /applist empty and Moonlight showing no
-# apps — always keep the key present.
-try:
-    data = dict(json.load(open(p)))
-except Exception:
-    data = {}
-data.setdefault("env", {})
-data["apps"] = apps
-json.dump(data, open(p, "w"), indent=4)
-PYEOF
-
 echo "=== [SteamOS Container] Starting Sunshine (wlr capture) ==="
-SUN_ENV="XDG_RUNTIME_DIR=$XDG_RUNTIME_DIR
-HOME=$HOME
-DBUS_SESSION_BUS_ADDRESS=$DBUS_SESSION_BUS_ADDRESS
-XDG_SESSION_TYPE=wayland
-WAYLAND_DISPLAY=$WAYLAND_DISPLAY"
-sudo -u "$USER_NAME" env $SUN_ENV sunshine >/tmp/sunshine.log 2>&1 &
+sudo -u "$USER_NAME" env XDG_RUNTIME_DIR="$XDG_RUNTIME_DIR" HOME="$HOME" \
+  WAYLAND_DISPLAY="$WAYLAND_DISPLAY" DISPLAY=:0 \
+  DBUS_SESSION_BUS_ADDRESS="$DBUS_SESSION_BUS_ADDRESS" \
+  sunshine >/tmp/sunshine.log 2>&1 &
 
 echo "=== [SteamOS Container] Starting VirtualHere USB client ==="
 if [ -n "${VH_SERVER:-}" ]; then
+  # Start the daemon first, then tell it to connect to the server (the
+  # combined -n -t form fails because the IPC daemon must be up).
   /usr/local/bin/vhclient -n >/dev/null 2>&1 &
   sleep 2
   /usr/local/bin/vhclient -t "$VH_SERVER" >/dev/null 2>&1 || true
@@ -361,8 +263,8 @@ fi
 
 echo "=== [SteamOS Container] Input hotplug helper ==="
 # Sunshine creates its virtual input devices (uinput) per client connect. The
-# container's /dev is private, so mknod the nodes + trigger udev so gamescope's
-# libinput backend attaches them.
+# container's /dev is private, so mknod the nodes + trigger udev so sway's
+# libinput backend attaches them (Wolf's fake-udev technique).
 (
   while true; do
     sleep 2
@@ -388,19 +290,23 @@ echo "=== [SteamOS Container] Input hotplug helper ==="
 
 echo "=== [SteamOS Container] Audio supervisor ==="
 # Self-heals the audio stack so mid-session device changes (mic unplug/replug,
-# client PA restart, app sink-switch) recover in a few seconds. Only touches
-# audio routing — never gamescope/Steam/Sunshine video/input.
+# Bluetooth switch, Mac PA restart, app sink-switch) recover in a few seconds.
+# Only touches audio routing — never sway/Steam/Sunshine video/input.
 (
   export PULSE_SERVER=unix:"$XDG_RUNTIME_DIR"/pulse/native
   while true; do
     sleep 3
+    # Keep the game/output sink pinned so Sunshine keeps capturing
     if [ "$(pactl get-default-sink 2>/dev/null)" != "sunshine-null" ]; then
       pactl set-default-sink sunshine-null 2>/dev/null || true
     fi
     if [ "$AUDIO_MIC_ENABLED" = "true" ]; then
+      # Games should use the processed (noise-suppressed) mic
       if [ "$(pactl get-default-source 2>/dev/null)" != "Noise Canceling source" ]; then
         pactl set-default-source "Noise Canceling source" 2>/dev/null || true
       fi
+      # Ensure the rnnoise filter captures from the mac-mic tunnel (re-links
+      # after the tunnel drops/reconnects or the source name changes)
       out=$(pw-link -o 2>/dev/null | grep -m1 "^mac-mic:")
       in=$(pw-link -i 2>/dev/null | grep -m1 "capture.rnnoise_source")
       if [ -n "$out" ] && [ -n "$in" ]; then
@@ -410,20 +316,13 @@ echo "=== [SteamOS Container] Audio supervisor ==="
   done
 ) &
 
-echo "=== [SteamOS Container] Launching gamescope (nested) + Steam ($GPU_VENDOR) ==="
-# gamescope runs NESTED under sway: WAYLAND_DISPLAY is set, so gamescope
-# auto-selects the Wayland backend and presents as a fullscreen surface on
-# sway's output. Steam runs inside gamescope (FSR/frame-pacing), Sunshine
-# captures sway via wlr-screencopy.
+echo "=== [SteamOS Container] Launching Steam Big Picture ==="
 sudo -u "$USER_NAME" env XDG_RUNTIME_DIR="$XDG_RUNTIME_DIR" HOME="$HOME" \
+  WAYLAND_DISPLAY="$WAYLAND_DISPLAY" DISPLAY=:0 \
   DBUS_SESSION_BUS_ADDRESS="$DBUS_SESSION_BUS_ADDRESS" \
   PIPEWIRE_RUNTIME_DIR="$XDG_RUNTIME_DIR/pipewire" \
-  WAYLAND_DISPLAY="$WAYLAND_DISPLAY" \
-  XDG_SESSION_TYPE=wayland \
-  dbus-run-session -- gamescope -e -o 1 -r "$GAMESCOPE_REFRESH" \
-    -W "$GS_W" -H "$GS_H" -f \
-    ${VK_DEVICE:+--prefer-vk-device "$VK_DEVICE"} \
-    -- steam -gamepadui -silent "$@" >/tmp/gamescope.log 2>&1
+  STEAM_USE_DYNAMIC_VK=1 \
+  dbus-run-session -- steam -tenfoot -silent "$@" >/tmp/steam.log 2>&1
 
-echo "=== [SteamOS Container] Steam/gamescope exited — stopping container ==="
+echo "=== [SteamOS Container] Steam exited — stopping container ==="
 exit 0

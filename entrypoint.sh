@@ -331,7 +331,16 @@ add("Close Game", "/home/steam/steamtools/close-game.sh")
 add("Restart Steam", "/home/steam/steamtools/restart-game.sh")
 add("Kill Steam", "/home/steam/steamtools/kill-steam.sh")
 os.makedirs(os.path.dirname(p), exist_ok=True)
-json.dump({"apps": apps}, open(p, "w"), indent=4)
+# Sunshine's process manager aborts the whole parse when "env" is absent
+# ("No such node (env)"), leaving /applist empty and Moonlight showing no
+# apps — always keep the key present.
+try:
+    data = dict(json.load(open(p)))
+except Exception:
+    data = {}
+data.setdefault("env", {})
+data["apps"] = apps
+json.dump(data, open(p, "w"), indent=4)
 PYEOF
 
 echo "=== [SteamOS Container] Starting Sunshine (wlr capture) ==="

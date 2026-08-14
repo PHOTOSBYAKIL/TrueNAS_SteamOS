@@ -234,9 +234,11 @@ SWAY_PID=$!
 # IPC socket: sway creates the IPC socket before the display socket is
 # connectable, and Sunshine needs the display socket. Derive WAYLAND_DISPLAY
 # from whatever sway actually bound instead of hardcoding a number.
+# NOTE: the socket is named `wayland-N` with NO `.sock` suffix (wlroots),
+# and sway leaves a parallel `wayland-N.lock` — exclude the lock file.
 WAYLAND_DISPLAY=""
 for i in $(seq 1 30); do
-  WAYLAND_DISPLAY=$(basename "$(ls "$XDG_RUNTIME_DIR"/wayland-*.sock 2>/dev/null | head -1)" 2>/dev/null)
+  WAYLAND_DISPLAY=$(basename "$(ls "$XDG_RUNTIME_DIR"/wayland-* 2>/dev/null | grep -v '\.lock$' | head -1)" 2>/dev/null)
   [ -n "$WAYLAND_DISPLAY" ] && break
   sleep 1
 done
@@ -296,7 +298,7 @@ echo "=== [SteamOS Container] Starting Sunshine (wlr capture) ==="
 start_sunshine() {
   local d="" i
   for i in $(seq 1 30); do
-    d=$(basename "$(ls "$XDG_RUNTIME_DIR"/wayland-*.sock 2>/dev/null | head -1)" 2>/dev/null)
+    d=$(basename "$(ls "$XDG_RUNTIME_DIR"/wayland-* 2>/dev/null | grep -v '\.lock$' | head -1)" 2>/dev/null)
     [ -n "$d" ] && break
     sleep 1
   done

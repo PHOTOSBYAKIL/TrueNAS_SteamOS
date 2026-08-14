@@ -215,6 +215,15 @@ echo "=== [SteamOS Container] Starting sway (headless + libinput) ==="
 # them so sway deterministically binds wayland-0 on every boot.
 sudo rm -f "$XDG_RUNTIME_DIR"/wayland-* "$XDG_RUNTIME_DIR"/sway-ipc* 2>/dev/null || true
 
+# The same staleness applies on the X11 side: /tmp/.X11-unix/X* and the
+# parallel /tmp/.X*-lock files also survive `docker stop/start`, so sway's
+# XWayland binds an incrementing display (:1, :2, ...) instead of :0. Steam
+# is an X11 (XWayland) client launched with DISPLAY=:0 — a drifted display
+# number means XOpenDisplay fails and the Steam client segfaults, taking the
+# whole session down and crash-looping the container. Wipe them so XWayland
+# deterministically binds :0 on every boot.
+sudo rm -f /tmp/.X11-unix/X* /tmp/.X*-lock 2>/dev/null || true
+
 SWAY_ENV="XDG_RUNTIME_DIR=$XDG_RUNTIME_DIR
 XDG_SESSION_TYPE=wayland
 XDG_CURRENT_DESKTOP=sway
@@ -249,6 +258,19 @@ if [ -z "$WAYLAND_DISPLAY" ]; then
 else
   echo "sway ready on WAYLAND_DISPLAY=${WAYLAND_DISPLAY}"
 fi
+
+# Derive the X display the same way: sway starts XWayland as part of coming
+# up, and the socket it binds is whatever is actually free (should be :0 after
+# the wipe above, but derive it so a mid-boot XWayland restart can never
+# strand Steam/Sunshine on a dead display number).
+X_DISPLAY=""
+for i in $(seq 1 30); do
+  X_DISPLAY=$(ls /tmp/.X11-unix/ 2>/dev/null | grep -E '^X[0-9]+$' | sed 's/^X//' | sort -n | head -1)
+  [ -n "$X_DISPLAY" ] && break
+  sleep 1
+done
+export DISPLAY=":${X_DISPLAY:-0}"
+echo "XWayland ready on DISPLAY=${DISPLAY}"
 
 echo "=== [SteamOS Container] Sway supervisor ==="
 # sway has no self-recovery: if it dies (xwayland crash, xcb error, etc.)
@@ -325,7 +347,7 @@ start_sunshine() {
   [ -z "$d" ] && d="$WAYLAND_DISPLAY"
   echo "[$(date +%H:%M:%S)] Launching Sunshine on WAYLAND_DISPLAY=${d:-<none>}"
   sudo -u "$USER_NAME" env XDG_RUNTIME_DIR="$XDG_RUNTIME_DIR" HOME="$HOME" \
-    WAYLAND_DISPLAY="$d" DISPLAY=:0 \
+    WAYLAND_DISPLAY="$d" DISPLAY="$DISPLAY" \
     DBUS_SESSION_BUS_ADDRESS="$DBUS_SESSION_BUS_ADDRESS" \
     sunshine >/tmp/sunshine.log 2>&1 &
   # Wait for the process to actually appear so callers (the supervisor checks
@@ -442,8 +464,15 @@ echo "=== [SteamOS Container] Audio supervisor ==="
 ) &
 
 echo "=== [SteamOS Container] Launching Steam Big Picture ==="
+# Wait for the X display to actually be connectable before launching Steam —
+# its -tenfoot UI is an X11 client and segfaults if X isn't ready.
+for i in $(seq 1 30); do
+  [ -S /tmp/.X11-unix/X"${DISPLAY#:}" ] && break
+  sleep 1
+done
+[ -S /tmp/.X11-unix/X"${DISPLAY#:}" ] || echo "WARNING: X socket ${DISPLAY} not ready after 30s" >&2
 sudo -u "$USER_NAME" env XDG_RUNTIME_DIR="$XDG_RUNTIME_DIR" HOME="$HOME" \
-  WAYLAND_DISPLAY="$WAYLAND_DISPLAY" DISPLAY=:0 \
+  WAYLAND_DISPLAY="$WAYLAND_DISPLAY" DISPLAY="$DISPLAY" \
   DBUS_SESSION_BUS_ADDRESS="$DBUS_SESSION_BUS_ADDRESS" \
   PIPEWIRE_RUNTIME_DIR="$XDG_RUNTIME_DIR/pipewire" \
   STEAM_USE_DYNAMIC_VK=1 \

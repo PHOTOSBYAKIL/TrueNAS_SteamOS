@@ -443,9 +443,28 @@ echo "=== [SteamOS Container] Audio supervisor ==="
   export PULSE_SERVER=unix:"$XDG_RUNTIME_DIR"/pulse/native
   while true; do
     sleep 3
-    # Keep the game/output sink pinned so Sunshine keeps capturing
-    if [ "$(pactl get-default-sink 2>/dev/null)" != "sunshine-null" ]; then
-      pactl set-default-sink sunshine-null 2>/dev/null || true
+    if pgrep -f 'SteamVR/bin/linux64/vrserver' >/dev/null 2>&1; then
+      # VR (Steam Link/Quest) session: SteamVR routes audio through its
+      # vrlink-sink, which it creates and captures for the headset. The
+      # sunshine-null pin below would fight SteamVR's routing (it reverts the
+      # default every 3s), leaving the Quest silent and the audio stuck on
+      # the Moonlight path. Let SteamVR's sink win, and move any streams that
+      # bound to sunshine-null (games started before the headset connected)
+      # onto vrlink-sink so the Quest hears them.
+      if [ "$(pactl get-default-sink 2>/dev/null)" != "vrlink-sink" ]; then
+        pactl set-default-sink vrlink-sink 2>/dev/null || true
+      fi
+      vs=$(pactl list short sinks 2>/dev/null | awk '/vrlink-sink/{print $1}')
+      if [ -n "$vs" ]; then
+        for id in $(pactl list sink-inputs short 2>/dev/null | awk -v v="$vs" '$2!=v{print $1}'); do
+          pactl move-sink-input "$id" vrlink-sink 2>/dev/null || true
+        done
+      fi
+    else
+      # Keep the game/output sink pinned so Sunshine keeps capturing
+      if [ "$(pactl get-default-sink 2>/dev/null)" != "sunshine-null" ]; then
+        pactl set-default-sink sunshine-null 2>/dev/null || true
+      fi
     fi
     if [ "$AUDIO_MIC_ENABLED" = "true" ]; then
       # Games should use the processed (noise-suppressed) mic

@@ -8,7 +8,7 @@
     "position": "top",
     "height": 30,
     "spacing": 6,
-    "modules-left": ["sway/window"],
+    "modules-left": ["sway/window", "custom/hidden"],
     "modules-center": [],
     "modules-right": ["custom/minimize", "custom/maximize", "custom/close"],
 
@@ -18,10 +18,21 @@
         "tooltip": false
     },
 
+    "custom/hidden": {
+        // Shown only when the focused app is minimized (hidden in the sway
+        // scratchpad) — click it (or [–]) to restore.
+        "exec": "/home/steam/steamtools/hidden-indicator.sh",
+        "interval": 2,
+        "format": "{}",
+        "on-click": "sh -c '/home/steam/steamtools/minimize-toggle.sh & disown'",
+        "tooltip": false
+    },
+
     "custom/minimize": {
-        // Hide the focused app (move to scratchpad). Restore with the M hotkey.
+        // Toggle: hide the focused app (scratchpad), or restore it if nothing
+        // is focused (i.e. it was already minimized).
         "format": "  \u2013  ",
-        "on-click": "sh -c 'SWAYSOCK=/run/user/1000/sway-ipc.sock XDG_RUNTIME_DIR=/run/user/1000 swaymsg move scratchpad'",
+        "on-click": "sh -c '/home/steam/steamtools/minimize-toggle.sh & disown'",
         "tooltip": false
     },
     "custom/maximize": {

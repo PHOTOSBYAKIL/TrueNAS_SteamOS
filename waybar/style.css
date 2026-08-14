@@ -20,6 +20,14 @@ window#waybar {
     padding: 0 10px;
 }
 
+/* "minimized — click – to restore" hint */
+#custom-hidden {
+    color: #ffd166;
+    font-size: 12px;
+    font-style: italic;
+    padding: 0 4px;
+}
+
 /* Window control buttons */
 #custom-minimize,
 #custom-maximize,

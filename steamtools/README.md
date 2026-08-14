@@ -19,7 +19,8 @@ drag a tab to reorder.
 | Module | Control | Action |
 |---|---|---|
 | `sway/window` (left) | — | Live title of the focused app |
-| `[–]` minimize | button | Hide focused app (moves it to the sway scratchpad) |
+| `custom/hidden` (left) | — | "minimized — click – to restore" hint, shown only while the app is hidden |
+| `[–]` minimize | button | Toggle: hide focused app (sway scratchpad), click again (or the hint) to restore |
 | `[▢]` maximize | button | Fill the entire screen (compositor-fullscreen; bar hides) |
 | `[✕]` close | button | Game focused → graceful close (force-kill after 10s) and back to Steam BP. Steam focused (or no game focused) → quit Steam, which stops the container, drops the stream, and returns the Moonlight client to its selection screen. |
 
@@ -47,7 +48,10 @@ input is a uinput device picked up by sway's libinput backend.
 - `restart-game.sh` — force-kills the focused game's whole Proton process tree
   (walks /proc up to the `SteamLaunch AppId=` root), leaving Steam running.
 - `kill-steam.sh` — quits Steam, which ends the entrypoint and stops the box.
-- `minimize-restore.sh` — `swaymsg scratchpad show` (un-hide a minimized app).
+- `minimize-toggle.sh` — toggle: hide the focused app (scratchpad) or restore it.
+- `minimize-restore.sh` — `swaymsg scratchpad show` + re-tile Steam (hotkey M).
+- `hidden-indicator.sh` — prints the "minimized — click – to restore" hint when
+  the focused app is hidden (polled by the waybar `custom/hidden` module).
 - `reveal-bar.sh` — un-fullscreens the focused app + shows the title bar
   (maximize recovery).
 

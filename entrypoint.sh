@@ -308,6 +308,13 @@ start_sunshine() {
     WAYLAND_DISPLAY="$d" DISPLAY=:0 \
     DBUS_SESSION_BUS_ADDRESS="$DBUS_SESSION_BUS_ADDRESS" \
     sunshine >/tmp/sunshine.log 2>&1 &
+  # Wait for the process to actually appear so callers (the supervisor checks
+  # right after this returns) never race the background fork and launch a
+  # duplicate that dies with "Address already in use" on the RTSP port.
+  for i in $(seq 1 10); do
+    pgrep -x sunshine >/dev/null 2>&1 && break
+    sleep 1
+  done
 }
 
 start_sunshine
@@ -319,6 +326,8 @@ start_sunshine
 (
   BACKOFF=5
   while true; do
+    # Sleep first so the very first check doesn't race the initial launch.
+    sleep 10
     if ! pgrep -x sunshine >/dev/null 2>&1; then
       echo "[$(date +%H:%M:%S)] Sunshine not running — (re)starting"
       start_sunshine

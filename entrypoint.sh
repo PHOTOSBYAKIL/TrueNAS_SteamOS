@@ -250,6 +250,26 @@ else
   echo "sway ready on WAYLAND_DISPLAY=${WAYLAND_DISPLAY}"
 fi
 
+echo "=== [SteamOS Container] Sway supervisor ==="
+# sway has no self-recovery: if it dies (xwayland crash, xcb error, etc.)
+# nothing restarts it and the whole stream is dead until the container is
+# recreated. A sway crash also invalidates every Wayland client connection,
+# so the only clean recovery is a full restart — kill Steam (which ends the
+# entrypoint) and let the `restart: unless-stopped` policy bring the box back
+# up fresh.
+(
+  while true; do
+    sleep 10
+    if ! pgrep -x sway >/dev/null 2>&1; then
+      echo "[$(date +%H:%M:%S)] sway died — restarting container (killing Steam)" >> /tmp/sway.log
+      pkill -TERM -f 'steam -tenfoot' 2>/dev/null
+      sleep 5
+      pkill -KILL -f 'steam -tenfoot' 2>/dev/null
+      exit 0
+    fi
+  done
+) &
+
 echo "=== [SteamOS Container] Seeding Sunshine config ==="
 SUNCONF="$HOME/.config/sunshine/sunshine.conf"
 if [ ! -s "$SUNCONF" ] || ! grep -q "capture = wlr" "$SUNCONF"; then

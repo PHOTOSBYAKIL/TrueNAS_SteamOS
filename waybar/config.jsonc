@@ -1,36 +1,40 @@
 {
-    // Recovery toolbar for the headless sway (Wayland) gaming box.
-    // Layer "top" = visible above normal windows (Steam Big Picture), hidden
-    // behind fullscreen games so it never covers them. To reach it over a
-    // frozen fullscreen game press Mod4+Ctrl+Shift+B (reveal-bar.sh drops the
-    // game out of fullscreen, which makes this bar visible and clickable).
+    // Top title bar for the headless sway gaming box — replaces the old bottom
+    // recovery toolbar. Nothing is ever compositor-fullscreen (the sway config
+    // uses a tabbed workspace layout instead), so this layer-top bar is ALWAYS
+    // visible and its window controls always work, even over running games.
+    // Left: focused window title (live). Right: minimize / maximize / close.
     "layer": "top",
-    "position": "bottom",
-    "height": 26,
+    "position": "top",
+    "height": 30,
     "spacing": 6,
-    "modules-left": ["custom/close", "custom/restart"],
+    "modules-left": ["sway/window"],
     "modules-center": [],
-    "modules-right": ["custom/killsteam", "custom/minimize"],
+    "modules-right": ["custom/minimize", "custom/maximize", "custom/close"],
 
-    "custom/close": {
-        "format": " [X] Close ",
-        "on-click": "sh -c 'sleep 0.1; /home/steam/steamtools/close-game.sh & disown'",
+    "sway/window": {
+        "format": "  {}",
+        "max-length": 90,
         "tooltip": false
     },
-    "custom/restart": {
-        "format": " [R] Restart ",
-        "on-click": "sh -c 'sleep 0.1; /home/steam/steamtools/restart-game.sh & disown'",
-        "tooltip": false
-    },
-    "custom/killsteam": {
-        "format": " [S] Kill Steam ",
-        "on-click": "sh -c 'sleep 0.1; /home/steam/steamtools/kill-steam.sh & disown'",
-        "tooltip": false
-    },
+
     "custom/minimize": {
-        "format": " [M] Minimize ",
-        // SIGUSR1 toggles waybar visibility (waybar(5) SIGNALS).
-        "on-click": "killall -SIGUSR1 waybar",
+        // Hide the focused app (move to scratchpad). Restore with the M hotkey.
+        "format": "  \u2013  ",
+        "on-click": "sh -c 'SWAYSOCK=/run/user/1000/sway-ipc.sock XDG_RUNTIME_DIR=/run/user/1000 swaymsg move scratchpad'",
+        "tooltip": false
+    },
+    "custom/maximize": {
+        // Fill the entire screen (compositor-fullscreen). The bar is hidden
+        // while maximized; press the B hotkey to restore + show the bar.
+        "format": "  \u25A2  ",
+        "on-click": "sh -c 'SWAYSOCK=/run/user/1000/sway-ipc.sock XDG_RUNTIME_DIR=/run/user/1000 swaymsg fullscreen toggle'",
+        "tooltip": false
+    },
+    "custom/close": {
+        // Graceful close of the focused app, force-kill the game tree after 10s.
+        "format": "  \u2715  ",
+        "on-click": "sh -c 'sleep 0.1; /home/steam/steamtools/close-game.sh & disown'",
         "tooltip": false
     }
 }

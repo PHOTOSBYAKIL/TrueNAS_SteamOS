@@ -1,47 +1,55 @@
-# steamos recovery toolbar
+# steamos title bar + window controls
 
-Kill/restart buttons + hotkeys for the headless sway session, so a frozen
-fullscreen game can be closed from Moonlight without rebooting the box.
+The headless sway session presents a **top title bar** over the streamed
+Steam Big Picture / game UI (Windows-style): the focused window's title on the
+left, and window control buttons on the right. It replaces the old bottom
+"recovery toolbar", which didn't work as intended (sway hides layer-top bars
+behind fullscreen windows, so the bar vanished during games).
 
-The toolbar is **Waybar** (`extra/waybar`, gtk-layer-shell — Wayland-native,
-no i3bar/JSON status protocol). It sits on layer **top** at the bottom, so it
-is hidden behind fullscreen games and never covers them; it is visible over
-Steam Big Picture / the desktop. Use the hotkeys (always work, even over a
-frozen game) or reveal the bar over a game with `Mod4+Ctrl+Shift+B`.
+## Why the bar is always visible
 
-## Buttons (bottom bar)
+The sway config uses a **tabbed workspace layout** and does NOT force anything
+compositor-fullscreen. A launched game becomes a new tab that fills the output
+below the title bar, so the bar is never covered. The sway tab strip (styled in
+`sway.config`) doubles as a lightweight taskbar: click a tab to switch apps,
+drag a tab to reorder.
 
-| Button | Action |
-|---|---|
-| `[X] Close` | Graceful window close (`swaymsg kill`), force-kill the game tree after 10s |
-| `[R] Restart` | Emergency force-close of the focused game → back to Steam Big Picture |
-| `[S] Kill Steam` | Quit Steam → container stops (restart from TrueNAS Apps UI) |
-| `[M] Minimize` | Hide the bar (SIGUSR1 toggle; show again with `Mod4+Ctrl+Shift+B`) |
+## Title bar (waybar, layer top, position top)
 
-## Hotkeys (same actions, work even over a frozen fullscreen game)
+| Module | Control | Action |
+|---|---|---|
+| `sway/window` (left) | — | Live title of the focused app |
+| `[–]` minimize | button | Hide focused app (moves it to the sway scratchpad) |
+| `[▢]` maximize | button | Fill the entire screen (compositor-fullscreen; bar hides) |
+| `[✕]` close | button | Graceful close of the focused app, force-kill after 10s |
+
+`waybar/config.jsonc` + `waybar/style.css` — title bar definition (custom
+modules with native `on-click` handlers calling the scripts, detached via
+`sh -c '... & disown'` to avoid the waybar pointer-grab re-fire issue).
+
+## Hotkeys (same actions, work even when a maximized window covers the bar)
 
 | Combo | Action |
 |---|---|
-| `Mod4+Ctrl+Shift+Q` | Close focused game |
-| `Mod4+Ctrl+Shift+R` | Force-restart focused game (back to Steam) |
+| `Mod4+Ctrl+Shift+Q` | Close focused app |
+| `Mod4+Ctrl+Shift+R` | Force-restart focused app (back to Steam) |
 | `Mod4+Ctrl+Shift+X` | Kill Steam / stop the box |
-| `Mod4+Ctrl+Shift+B` | Reveal the bar over the current game (un-fullscreens it) |
+| `Mod4+Ctrl+Shift+M` | Restore the minimized (scratchpad) app |
+| `Mod4+Ctrl+Shift+B` | Un-maximize focused app + show the title bar |
 
 `Mod4` = the Super/Windows key. Keys reach sway because Sunshine's virtual
 input is a uinput device picked up by sway's libinput backend.
 
-## How it works
+## Scripts
 
-- `waybar/config.jsonc` + `waybar/style.css` — toolbar definition: custom
-  modules with native `on-click` handlers calling the scripts (detached via
-  `sh -c '... & disown'` to avoid the waybar pointer-grab re-fire issue).
-- `reveal-bar.sh` — un-fullscreens the focused game (if `steam_app_*`) so the
-  top-layer bar becomes visible over it, and un-hides the bar if minimized.
+- `common.sh` — shared sway-IPC helpers (focused-window parser, `kill_tree`).
 - `close-game.sh` — graceful close, escalates to a force-kill.
 - `restart-game.sh` — force-kills the focused game's whole Proton process tree
   (walks /proc up to the `SteamLaunch AppId=` root), leaving Steam running.
 - `kill-steam.sh` — quits Steam, which ends the entrypoint and stops the box.
-- `common.sh` — shared sway-IPC helpers (focused-window parser, kill_tree).
+- `minimize-restore.sh` — `swaymsg scratchpad show` (un-hide a minimized app).
+- `reveal-bar.sh` — un-fullscreens the focused app + shows the title bar
+  (maximize recovery).
 
 Logs: `/tmp/steamtools.log` inside the container.
 
@@ -49,9 +57,8 @@ Logs: `/tmp/steamtools.log` inside the container.
 
 swaybar's `status_command` sends **SIGTERM to the status child's process group**
 a few seconds after spawn (`status_line_free` in sway 1.12), killing any status
-script — even a perfect i3bar one — which is why the first attempt showed
-`[invalid i3bar json]`. Waybar renders natively via gtk-layer-shell and has no
-such status-command lifecycle, so buttons/clicks are reliable.
+script. Waybar renders natively via gtk-layer-shell and has no such
+status-command lifecycle, so buttons/clicks are reliable.
 
 ## Deployment
 

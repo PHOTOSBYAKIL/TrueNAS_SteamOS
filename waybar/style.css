@@ -1,34 +1,42 @@
 * {
     border: none;
     border-radius: 0;
-    font-family: "DejaVu Sans Mono";
-    font-size: 11px;
+    font-family: "DejaVu Sans";
+    font-size: 13px;
     min-height: 0;
 }
 
 window#waybar {
-    background: rgba(16, 16, 20, 0.9);
-    color: #c9d1d9;
+    background: rgba(18, 20, 28, 0.96);
+    color: #d8dee9;
+    border-bottom: 1px solid rgba(255, 255, 255, 0.08);
 }
 
+/* Focused window title (sway/window module) */
+#window {
+    color: #eceff4;
+    font-size: 13px;
+    font-weight: bold;
+    padding: 0 10px;
+}
+
+/* Window control buttons */
+#custom-minimize,
+#custom-maximize,
 #custom-close {
-    color: #ff6b6b;
-    padding: 0 8px;
+    padding: 0 14px;
+    color: #d8dee9;
+    font-size: 14px;
 }
 
-#custom-restart {
-    color: #ffd166;
-    padding: 0 8px;
+#custom-minimize:hover,
+#custom-maximize:hover {
+    background: rgba(255, 255, 255, 0.12);
 }
 
-#custom-killsteam {
-    color: #ff4444;
-    padding: 0 8px;
-}
-
-#custom-minimize {
-    color: #9fb3c8;
-    padding: 0 8px;
+#custom-close:hover {
+    background: #d64550;
+    color: #ffffff;
 }
 
 tooltip {

@@ -21,7 +21,7 @@ drag a tab to reorder.
 | `sway/window` (left) | — | Live title of the focused app |
 | `[–]` minimize | button | Hide focused app (moves it to the sway scratchpad) |
 | `[▢]` maximize | button | Fill the entire screen (compositor-fullscreen; bar hides) |
-| `[✕]` close | button | Graceful close of the focused app, force-kill after 10s |
+| `[✕]` close | button | Game focused → graceful close (force-kill after 10s) and back to Steam BP. Steam focused (or no game focused) → quit Steam, which stops the container, drops the stream, and returns the Moonlight client to its selection screen. |
 
 `waybar/config.jsonc` + `waybar/style.css` — title bar definition (custom
 modules with native `on-click` handlers calling the scripts, detached via
@@ -31,7 +31,7 @@ modules with native `on-click` handlers calling the scripts, detached via
 
 | Combo | Action |
 |---|---|
-| `Mod4+Ctrl+Shift+Q` | Close focused app |
+| `Mod4+Ctrl+Shift+Q` | Close focused app (game → back to Steam; Steam → end session / Moonlight selection) |
 | `Mod4+Ctrl+Shift+R` | Force-restart focused app (back to Steam) |
 | `Mod4+Ctrl+Shift+X` | Kill Steam / stop the box |
 | `Mod4+Ctrl+Shift+M` | Restore the minimized (scratchpad) app |

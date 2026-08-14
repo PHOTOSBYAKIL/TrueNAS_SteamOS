@@ -172,6 +172,25 @@ the whole screen (Sunshine's input reaches sway via uinput/libinput):
   first run; if you replaced the volume, reseed it by restarting the app once,
   or run `sunshine --creds` / re-pair Moonlight.
 
+* **Moonlight can't connect / streams fail right after a NAS or container
+  restart** — the entrypoint used to hardcode `WAYLAND_DISPLAY=wayland-1` and
+  start Sunshine the moment sway's **IPC** socket appeared. The Wayland display
+  socket (the one Sunshine actually needs) appears later, and `/run/user/1000`
+  is **not** wiped by `docker stop/start` — stale `sway-ipc*.sock` and
+  `wayland-*.lock` files from the previous boot made the readiness wait succeed
+  instantly and shifted the display number sway picked. Sunshine starts once,
+  never retries, so a lost race left it "up" (web UI + ports listening) but with
+  `Unable to find display or encoder` and no stream until the container was
+  recreated.
+
+  **Fixed in the image**: the entrypoint now (a) wipes stale sway/Wayland
+  sockets before starting sway, (b) waits for the actual
+  `wayland-*.sock` socket and derives `WAYLAND_DISPLAY` from it instead of
+  hardcoding a number, and (c) runs a **Sunshine supervisor** that restarts it
+  (with backoff) whenever it dies or boots without a working encoder. After
+  updating the image and restarting the app, Sunshine self-heals on boot — no
+  manual steps needed.
+
 ## Building locally
 
 ```bash

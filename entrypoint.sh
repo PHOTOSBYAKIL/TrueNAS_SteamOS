@@ -206,6 +206,15 @@ echo "=== [SteamOS Container] Starting sway (headless + libinput) ==="
 # headless = virtual output; libinput = Sunshine's uinput input devices.
 # WLR_LIBINPUT_NO_DEVICES=1 lets libinput start empty and pick up devices
 # via udev when a Moonlight client connects.
+#
+# /run/user/1000 is NOT wiped on `docker stop/start` (only when the container
+# is recreated), so stale sway-ipc*.sock / wayland-*.lock files from the
+# previous boot survive. They would (a) shift the display number sway picks
+# and (b) make the readiness wait below succeed instantly against a dead
+# socket — both leaving Sunshine pointed at the wrong/absent display. Wipe
+# them so sway deterministically binds wayland-0 on every boot.
+sudo rm -f "$XDG_RUNTIME_DIR"/wayland-* "$XDG_RUNTIME_DIR"/sway-ipc* 2>/dev/null || true
+
 SWAY_ENV="XDG_RUNTIME_DIR=$XDG_RUNTIME_DIR
 XDG_SESSION_TYPE=wayland
 XDG_CURRENT_DESKTOP=sway
@@ -220,13 +229,24 @@ SWAYSOCK=$XDG_RUNTIME_DIR/sway-ipc.sock"
 sudo -u "$USER_NAME" env $SWAY_ENV sway -c /etc/sway/config \
   >/tmp/sway.log 2>&1 &
 SWAY_PID=$!
-export WAYLAND_DISPLAY=wayland-1
 
-# Wait for sway to be ready
-for i in $(seq 1 20); do
-  [ -S "$XDG_RUNTIME_DIR/sway-ipc.sock" ] && break
+# Wait for sway to be ready — the Wayland DISPLAY socket specifically, not the
+# IPC socket: sway creates the IPC socket before the display socket is
+# connectable, and Sunshine needs the display socket. Derive WAYLAND_DISPLAY
+# from whatever sway actually bound instead of hardcoding a number.
+WAYLAND_DISPLAY=""
+for i in $(seq 1 30); do
+  WAYLAND_DISPLAY=$(basename "$(ls "$XDG_RUNTIME_DIR"/wayland-*.sock 2>/dev/null | head -1)" 2>/dev/null)
+  [ -n "$WAYLAND_DISPLAY" ] && break
   sleep 1
 done
+export WAYLAND_DISPLAY
+if [ -z "$WAYLAND_DISPLAY" ]; then
+  echo "WARNING: sway did not expose a Wayland display socket after 30s" >&2
+  tail -20 /tmp/sway.log >&2 || true
+else
+  echo "sway ready on WAYLAND_DISPLAY=${WAYLAND_DISPLAY}"
+fi
 
 echo "=== [SteamOS Container] Seeding Sunshine config ==="
 SUNCONF="$HOME/.config/sunshine/sunshine.conf"
@@ -268,10 +288,62 @@ PYEOF
 fi
 
 echo "=== [SteamOS Container] Starting Sunshine (wlr capture) ==="
-sudo -u "$USER_NAME" env XDG_RUNTIME_DIR="$XDG_RUNTIME_DIR" HOME="$HOME" \
-  WAYLAND_DISPLAY="$WAYLAND_DISPLAY" DISPLAY=:0 \
-  DBUS_SESSION_BUS_ADDRESS="$DBUS_SESSION_BUS_ADDRESS" \
-  sunshine >/tmp/sunshine.log 2>&1 &
+# Sunshine never retries: if the Wayland display isn't connectable when it
+# boots (a NAS/container restart races sway, or sway hiccups) it stays up but
+# broken — web UI/ports listen, but "Unable to find display or encoder" and
+# no stream is ever available until the container is recreated. (Re)launch it
+# with a fresh wait for the display socket and keep it supervised below.
+start_sunshine() {
+  local d="" i
+  for i in $(seq 1 30); do
+    d=$(basename "$(ls "$XDG_RUNTIME_DIR"/wayland-*.sock 2>/dev/null | head -1)" 2>/dev/null)
+    [ -n "$d" ] && break
+    sleep 1
+  done
+  [ -z "$d" ] && d="$WAYLAND_DISPLAY"
+  echo "[$(date +%H:%M:%S)] Launching Sunshine on WAYLAND_DISPLAY=${d:-<none>}"
+  sudo -u "$USER_NAME" env XDG_RUNTIME_DIR="$XDG_RUNTIME_DIR" HOME="$HOME" \
+    WAYLAND_DISPLAY="$d" DISPLAY=:0 \
+    DBUS_SESSION_BUS_ADDRESS="$DBUS_SESSION_BUS_ADDRESS" \
+    sunshine >/tmp/sunshine.log 2>&1 &
+}
+
+start_sunshine
+
+# Sunshine supervisor — restart it when it dies, and when it is alive but
+# logged a fatal no-display/no-encoder boot (streams are broken even though
+# the process lives). Backs off on failure so a genuinely absent display
+# doesn't hot-restart-loop.
+(
+  BACKOFF=5
+  while true; do
+    if ! pgrep -x sunshine >/dev/null 2>&1; then
+      echo "[$(date +%H:%M:%S)] Sunshine not running — (re)starting"
+      start_sunshine
+      sleep "$BACKOFF"
+      [ "$BACKOFF" -lt 60 ] && BACKOFF=$((BACKOFF + 5))
+      continue
+    fi
+    # Healthy boot = the log shows a found encoder. Broken boot = the fatal
+    # line is present and the log stopped being written >=15s ago.
+    if grep -q "Unable to find display or encoder" /tmp/sunshine.log 2>/dev/null; then
+      now=$(date +%s)
+      mtime=$(stat -c %Y /tmp/sunshine.log 2>/dev/null || echo 0)
+      if [ "$(( now - mtime ))" -ge 15 ]; then
+        echo "[$(date +%H:%M:%S)] Sunshine booted without display/encoder — restarting"
+        pkill -x sunshine
+        sleep 2
+        : > /tmp/sunshine.log
+        start_sunshine
+        sleep "$BACKOFF"
+        [ "$BACKOFF" -lt 60 ] && BACKOFF=$((BACKOFF + 5))
+        continue
+      fi
+    fi
+    BACKOFF=5
+    sleep 15
+  done
+) &
 
 echo "=== [SteamOS Container] Starting VirtualHere USB client ==="
 if [ -n "${VH_SERVER:-}" ]; then

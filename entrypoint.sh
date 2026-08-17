@@ -114,7 +114,7 @@ WLR_LIBINPUT_NO_DEVICES=1"
 # Gamescope creates its own Wayland display + Xwayland for Steam.
 # Steam is launched as the child process after '--'.
 sudo -u "$USER_NAME" env $GAMESCOPE_ENV \
-  gamescope -e --force-grab-cursor -- steam -tenfoot -silent \
+  gamescope -e -W 1920 -H 1080 -r 60 --force-grab-cursor -- steam -tenfoot -silent \
   >/tmp/gamescope.log 2>&1 &
 GAMESCOPE_PID=$!
 

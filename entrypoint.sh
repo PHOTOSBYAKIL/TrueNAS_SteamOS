@@ -108,7 +108,8 @@ HOME=$HOME
 DBUS_SESSION_BUS_ADDRESS=$DBUS_SESSION_BUS_ADDRESS
 PIPEWIRE_RUNTIME_DIR=$XDG_RUNTIME_DIR/pipewire
 WLR_BACKENDS=headless,libinput
-WLR_LIBINPUT_NO_DEVICES=1"
+WLR_LIBINPUT_NO_DEVICES=1
+DISPLAY=:0"
 
 # Gamescope -e: embedded mode (DRM/KMS, takes over the virtual display).
 # Gamescope creates its own Wayland display + Xwayland for Steam.
@@ -133,15 +134,8 @@ else
   echo "gamescope ready on WAYLAND_DISPLAY=${WAYLAND_DISPLAY}"
 fi
 
-# Derive X display (gamescope starts Xwayland internally)
-X_DISPLAY=""
-for i in $(seq 1 10); do
-  X_DISPLAY=$(ls /tmp/.X11-unix/ 2>/dev/null | grep -E '^X[0-9]+$' | sed 's/^X//' | sort -n | head -1)
-  [ -n "$X_DISPLAY" ] && break
-  sleep 1
-done
-export DISPLAY=":${X_DISPLAY:-0}"
-echo "XWayland ready on DISPLAY=${DISPLAY}"
+export DISPLAY=":0"
+echo "DISPLAY=${DISPLAY} (gamescope manages Xwayland internally)"
 
 echo "=== [SteamOS] Gamescope supervisor ==="
 # If gamescope dies, kill Steam to trigger container restart

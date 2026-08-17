@@ -136,15 +136,17 @@ export DISPLAY=":0"
 echo "DISPLAY=${DISPLAY} (gamescope manages Xwayland internally)"
 
 echo "=== [SteamOS] Gamescope supervisor ==="
-# If gamescope dies, kill Steam to trigger container restart
+# If gamescope dies, kill the entrypoint to trigger container restart.
+# Only kill processes named exactly 'steam' (not gamescope which contains
+# 'steam' in its argument string from the 'gamescope -- steam' command).
 (
   while true; do
     sleep 10
     if ! pgrep -x gamescope >/dev/null 2>&1; then
       echo "[$(date +%H:%M:%S)] gamescope died — restarting container"
-      pkill -TERM -f 'steam -tenfoot' 2>/dev/null
+      pkill -TERM -x steam 2>/dev/null
       sleep 5
-      pkill -KILL -f 'steam -tenfoot' 2>/dev/null
+      pkill -KILL -x steam 2>/dev/null
       exit 0
     fi
   done

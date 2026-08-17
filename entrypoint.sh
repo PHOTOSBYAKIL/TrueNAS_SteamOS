@@ -34,11 +34,19 @@ sudo -u "$USER_NAME" env DBUS_SESSION_BUS_ADDRESS="$DBUS_SESSION_BUS_ADDRESS" \
 echo "=== [SteamOS] Granting device access ==="
 sudo chmod 666 /dev/dri/* 2>/dev/null || true
 
-echo "=== [SteamOS] Writing udev rules for Sunshine input ==="
+# Official Sunshine udev rules (from LizardByte docs + Arch-specific fixes)
+echo "=== [SteamOS] Writing udev rules ==="
 sudo mkdir -p /etc/udev/rules.d
+
+# Official Sunshine uinput rule (matches LizardByte documentation exactly)
+sudo tee /etc/udev/rules.d/60-sunshine-uinput.rules >/dev/null <<'RULES'
+KERNEL=="uinput", SUBSYSTEM=="misc", OPTIONS+="static_node=uinput", TAG+="uaccess", GROUP="input", MODE="0660"
+KERNEL=="uhid", TAG+="uaccess", GROUP="input", MODE="0660"
+RULES
+
+# Sunshine/inputtino virtual device tagging for libinput recognition
 sudo tee /etc/udev/rules.d/99-sunshine-input.rules >/dev/null <<'RULES'
 # Sunshine/inputtino virtual devices (vendor 0x3434 = 13364 decimal)
-# Match all Sunshine virtual devices by vendor ID
 ACTION=="add|change", SUBSYSTEM=="input", ATTRS{vendor}=="13364", ENV{ID_INPUT}="1", MODE="0666"
 
 # Keyboard passthrough
@@ -59,24 +67,20 @@ ACTION=="add|change", SUBSYSTEM=="input", ATTRS{name}=="Pen passthrough", ENV{ID
 # Xbox gamepad
 ACTION=="add|change", SUBSYSTEM=="input", ATTRS{name}=="Sunshine X-Box One*", ENV{ID_INPUT}="1", ENV{ID_INPUT_JOYSTICK}="1", MODE="0666"
 
-# uinput device — Sunshine needs write access to create virtual devices
-KERNEL=="uinput", SUBSYSTEM=="misc", OPTIONS+="static_node=uinput", MODE="0660", GROUP="input"
-
-# uhid device — needed for DS5/DualSense gamepad emulation
-KERNEL=="uhid", MODE="0660", GROUP="input"
-
-# Joystick devices
+# All input event devices — world accessible
+SUBSYSTEM=="input", KERNEL=="event[0-9]*", MODE="0666"
 KERNEL=="js[0-9]*", MODE="0666"
 RULES
 
 echo "=== [SteamOS] Starting udevd ==="
 sudo /usr/lib/systemd/systemd-udevd --daemon 2>/dev/null || true
-# Apply rules to existing devices (host input devices)
+sudo udevadm control --reload-rules 2>/dev/null || true
 sudo udevadm trigger --subsystem-match=input 2>/dev/null || true
 sudo udevadm settle --timeout=5 2>/dev/null || true
-# Ensure /dev/uinput and /dev/uhid are accessible after udevd applies rules
-sudo chmod 666 /dev/uinput 2>/dev/null || true
-sudo chmod 666 /dev/uhid 2>/dev/null || true
+# Ensure /dev/uinput is accessible (Sunshine needs this before creating virtual devices)
+sudo chmod 0660 /dev/uinput 2>/dev/null || true
+sudo chown root:input /dev/uinput 2>/dev/null || true
+sudo chmod 0666 /dev/uhid 2>/dev/null || true
 
 echo "=== [SteamOS] Configuring PipeWire ==="
 mkdir -p "$HOME/.config/pipewire/pipewire.conf.d"
@@ -187,7 +191,7 @@ adapter_name = /dev/dri/renderD128
 audio_sink = sunshine-null
 keyboard = enabled
 mouse = enabled
-gamepad = auto
+gamepad = xone
 EOF
   echo "Wrote Sunshine config (wlr capture, input enabled, CSRF origin https://${LAN_IP}:47990)"
 fi
@@ -195,7 +199,9 @@ fi
 if [ -f "$SUNCONF" ]; then
   grep -q "^keyboard" "$SUNCONF" || echo "keyboard = enabled" >> "$SUNCONF"
   grep -q "^mouse" "$SUNCONF" || echo "mouse = enabled" >> "$SUNCONF"
-  grep -q "^gamepad" "$SUNCONF" || echo "gamepad = auto" >> "$SUNCONF"
+  # Force gamepad to xone for stability (auto mode causes disconnects)
+  sed -i 's/^gamepad = auto/gamepad = xone/' "$SUNCONF"
+  grep -q "^gamepad" "$SUNCONF" || echo "gamepad = xone" >> "$SUNCONF"
 fi
 
 APPS="$HOME/.config/sunshine/apps.json"
@@ -215,72 +221,23 @@ PYEOF
   echo "Healed Sunshine apps.json"
 fi
 
-echo "=== [SteamOS] Starting input device hotplug watcher ==="
-# Sunshine creates uinput devices in the kernel, but in a Docker container
-# the host's udevd (not ours) receives the uevent, so /dev/input/event* nodes
-# are never created. We must mknod them ourselves by reading sysfs uevent files.
-create_missing_devnodes() {
-  # Create /dev/input/event* nodes from sysfs
-  for sysdev in /sys/class/input/event*; do
-    [ -d "$sysdev" ] || continue
-    devname=$(basename "$sysdev")
-    [ -e "/dev/input/$devname" ] && continue
-    uevent="$sysdev/uevent"
-    [ -f "$uevent" ] || continue
-    MAJOR=$(sed -n 's/^MAJOR=//p' "$uevent")
-    MINOR=$(sed -n 's/^MINOR=//p' "$uevent")
-    [ -n "$MAJOR" ] && [ -n "$MINOR" ] || continue
-    echo "[$(date +%H:%M:%S)] mknod /dev/input/$devname c $MAJOR $MINOR"
-    sudo mknod "/dev/input/$devname" c "$MAJOR" "$MINOR" 2>/dev/null || true
-    sudo chmod 666 "/dev/input/$devname" 2>/dev/null || true
-  done
-  # Create /dev/input/mouse* nodes from sysfs
-  for sysdev in /sys/class/input/mouse*; do
-    [ -d "$sysdev" ] || continue
-    devname=$(basename "$sysdev")
-    [ -e "/dev/input/$devname" ] && continue
-    uevent="$sysdev/uevent"
-    [ -f "$uevent" ] || continue
-    MAJOR=$(sed -n 's/^MAJOR=//p' "$uevent")
-    MINOR=$(sed -n 's/^MINOR=//p' "$uevent")
-    [ -n "$MAJOR" ] && [ -n "$MINOR" ] || continue
-    echo "[$(date +%H:%M:%S)] mknod /dev/input/$devname c $MAJOR $MINOR"
-    sudo mknod "/dev/input/$devname" c "$MAJOR" "$MINOR" 2>/dev/null || true
-    sudo chmod 666 "/dev/input/$devname" 2>/dev/null || true
-  done
-  # Create /dev/input/js* nodes from sysfs
-  for sysdev in /sys/class/input/js*; do
-    [ -d "$sysdev" ] || continue
-    devname=$(basename "$sysdev")
-    [ -e "/dev/input/$devname" ] && continue
-    uevent="$sysdev/uevent"
-    [ -f "$uevent" ] || continue
-    MAJOR=$(sed -n 's/^MAJOR=//p' "$uevent")
-    MINOR=$(sed -n 's/^MINOR=//p' "$uevent")
-    [ -n "$MAJOR" ] && [ -n "$MINOR" ] || continue
-    echo "[$(date +%H:%M:%S)] mknod /dev/input/$devname c $MAJOR $MINOR"
-    sudo mknod "/dev/input/$devname" c "$MAJOR" "$MINOR" 2>/dev/null || true
-    sudo chmod 666 "/dev/input/$devname" 2>/dev/null || true
-  done
-}
-
+echo "=== [SteamOS] Starting input device watcher ==="
+# The host's /dev/input is bind-mounted into the container. The host's udevd
+# creates device nodes for Sunshine's uinput devices. We only need to ensure
+# permissions stay correct and trigger udev when new devices appear.
 (
   LAST_COUNT=0
   while true; do
-    # Create any missing device nodes
-    create_missing_devnodes
-    # Count current input devices
     CURR_COUNT=$(ls /dev/input/event* 2>/dev/null | wc -l)
     if [ "$CURR_COUNT" -ne "$LAST_COUNT" ]; then
       echo "[$(date +%H:%M:%S)] Input event devices: $LAST_COUNT -> $CURR_COUNT"
       LAST_COUNT=$CURR_COUNT
-      # Trigger udev so libinput picks up new devices with ID_INPUT_* tags
-      sudo udevadm trigger --subsystem-match=input 2>/dev/null || true
+      # Ensure all input devices are accessible
+      chmod 666 /dev/input/event* /dev/input/js* 2>/dev/null || true
+      # Trigger udev so libinput picks up devices with ID_INPUT_* tags
+      udevadm trigger --subsystem-match=input 2>/dev/null || true
     fi
-    # Keep /dev/uinput and /dev/uhid accessible
-    sudo chmod 666 /dev/uinput 2>/dev/null || true
-    sudo chmod 666 /dev/uhid 2>/dev/null || true
-    sleep 1
+    sleep 3
   done
 ) &
 
@@ -306,13 +263,10 @@ start_sunshine() {
 
 start_sunshine
 
-# After Sunshine starts, give it a moment then create any missing device nodes
-# and trigger udev so libinput picks them up
+# After Sunshine starts, trigger udev once for any devices it created
 sleep 3
-create_missing_devnodes
-sudo udevadm trigger --subsystem-match=input 2>/dev/null || true
-sudo udevadm settle --timeout=5 2>/dev/null || true
-sudo chmod 666 /dev/uinput 2>/dev/null || true
+chmod 666 /dev/input/event* /dev/input/js* 2>/dev/null || true
+udevadm trigger --subsystem-match=input 2>/dev/null || true
 
 # Sunshine supervisor
 (

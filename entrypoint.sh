@@ -222,24 +222,18 @@ PYEOF
 fi
 
 echo "=== [SteamOS] Starting input device watcher ==="
-# The host's /dev/input is bind-mounted into the container. The host's udevd
-# creates device nodes for Sunshine's uinput devices. We only need to ensure
-# permissions stay correct and trigger udev when new devices appear.
+# The host's /dev/input is bind-mounted. The host's udevd creates nodes
+# with its own GID (105 on this host) which doesn't match our container's
+# input group (992). We must chmod ALL devices every cycle to ensure the
+# steam user can always access them regardless of host GID mismatch.
 (
-  LAST_COUNT=0
   while true; do
-    CURR_COUNT=$(ls /dev/input/event* 2>/dev/null | wc -l)
-    if [ "$CURR_COUNT" -ne "$LAST_COUNT" ]; then
-      echo "[$(date +%H:%M:%S)] Input event devices: $LAST_COUNT -> $CURR_COUNT"
-      LAST_COUNT=$CURR_COUNT
-      # Ensure all input devices are accessible
-      chmod 666 /dev/input/event* /dev/input/js* 2>/dev/null || true
-      # Keep /dev/uinput writable (udevd may reset permissions)
-      chmod 666 /dev/uinput 2>/dev/null || true
-      # Trigger udev so libinput picks up devices with ID_INPUT_* tags
-      udevadm trigger --subsystem-match=input 2>/dev/null || true
-    fi
-    sleep 3
+    # Continuously chmod all input devices (host GID mismatch means
+    # 0660 root:105 blocks our steam user even though it's in "input")
+    chmod 666 /dev/input/event* /dev/input/js* /dev/input/mouse* 2>/dev/null || true
+    # Trigger udev so libinput picks up devices with ID_INPUT_* tags
+    udevadm trigger --subsystem-match=input 2>/dev/null || true
+    sleep 2
   done
 ) &
 

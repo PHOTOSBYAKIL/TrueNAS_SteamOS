@@ -191,7 +191,7 @@ csrf_allowed_origins = https://${LAN_IP}:47990
 capture = wlr
 encoder = vaapi
 adapter_name = /dev/dri/renderD128
-audio_sink = sunshine-null
+audio_sink = sink-sunshine-stereo
 keyboard = enabled
 mouse = enabled
 gamepad = xone
@@ -205,6 +205,10 @@ if [ -f "$SUNCONF" ]; then
   # Force gamepad to xone for stability (auto mode causes disconnects)
   sed -i 's/^gamepad = auto/gamepad = xone/' "$SUNCONF"
   grep -q "^gamepad" "$SUNCONF" || echo "gamepad = xone" >> "$SUNCONF"
+  # Fix audio sink — Sunshine creates sink-sunshine-stereo when a client connects
+  # but audio_sink was set to sunshine-null (nothing plays there)
+  sed -i 's/^audio_sink = sunshine-null/audio_sink = sink-sunshine-stereo/' "$SUNCONF"
+  grep -q "^audio_sink" "$SUNCONF" || echo "audio_sink = sink-sunshine-stereo" >> "$SUNCONF"
 fi
 
 APPS="$HOME/.config/sunshine/apps.json"

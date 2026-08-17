@@ -1,31 +1,19 @@
 # ============================================================================
 # TrueNAS_SteamOS
 #
-# An Arch Linux, SteamOS-style container for TrueNAS with current graphics
-# drivers. Arch ships the latest Mesa (>= 25.2.1) which SteamVR's Steam Link
-# headset driver requires for Quest VR.
+# Headless Arch Linux streaming container using gamescope as the session
+# compositor (same as Steam Deck). Games open/close seamlessly — no workspace
+# tricks, no focus management hacks. Sunshine captures via wlr-screencopy.
 #
-# The image is built automatically from this repo and published to:
-#   ghcr.io/photosbyakil/truenas_steamos:main
-#
-# IMPORTANT — DO NOT run this container alongside any OTHER Sunshine host
-# (including Wolf / Games on Whales, or a second SteamOS instance) on the same
-# machine. Sunshine and Wolf are both Moonlight streaming servers and claim the
-# same ports (47984/47989 TCP and 47999/48010/48100/48200 UDP), so one of them
-# will fail to start ("Address already in use").
-#   - Run this box INSTEAD of Wolf, or
-#   - Run it on a separate machine/NAS, or
-#   - If you really must run both, stop Wolf (or change Sunshine's ports) first.
-#
-# See README.md and "Container Installation YAML" for TrueNAS setup.
+# Image: ghcr.io/photosbyakil/truenas_steamos:main
 # ============================================================================
 FROM archlinux:latest
 
-# 1. Enable 32-bit Multilib Repositories & LizardByte Custom Repository
+# Enable 32-bit Multilib + LizardByte repos
 RUN echo -e "\n[multilib]\nInclude = /etc/pacman.d/mirrorlist" >> /etc/pacman.conf && \
     echo -e "\n[lizardbyte]\nSigLevel = Optional\nServer = https://github.com/LizardByte/pacman-repo/releases/latest/download" >> /etc/pacman.conf
 
-# 2. Base Bootstrap (Pacman can now find sunshine!)
+# Install packages
 RUN pacman -Syu --noconfirm && \
     pacman -S --noconfirm \
     base-devel \
@@ -48,10 +36,6 @@ RUN pacman -Syu --noconfirm && \
     steam \
     dbus \
     networkmanager \
-    sway \
-    swaybg \
-    swayidle \
-    waybar \
     xorg-xwayland \
     seatd \
     pipewire \
@@ -60,20 +44,15 @@ RUN pacman -Syu --noconfirm && \
     pipewire-audio \
     lib32-pipewire \
     lib32-libpulse \
-    libinput \
-    wayland-utils \
     gamescope \
     mangohud \
     libva \
     libva-utils \
     vulkan-tools \
     mesa-utils \
-    noise-suppression-for-voice \
-    ladspa \
-    swh-plugins \
     && pacman -Scc --noconfirm
 
-# 3. Create non-root user 'steam'
+# Create steam user
 ENV USER=steam
 ENV HOME=/home/${USER}
 
@@ -81,36 +60,22 @@ RUN useradd -m -s /bin/bash ${USER} && \
     echo "${USER} ALL=(ALL) NOPASSWD: ALL" >> /etc/sudoers.d/${USER} && \
     chmod 0440 /etc/sudoers.d/${USER}
 
-# Sunshine requires the user to be in the input group for controller emulation
 RUN usermod -aG video,audio,input ${USER}
 
-# 4. Copy Startup Script & Set Permissions
+# Copy entrypoint
 COPY --chown=steam:steam entrypoint.sh /usr/local/bin/entrypoint.sh
 RUN chmod +x /usr/local/bin/entrypoint.sh
 
-# Headless sway config (WLR_BACKENDS=headless,libinput). Requires host kernel
-# param amdgpu.virtual_display=desc:1920x1080 for GPU rendering.
-COPY sway.config /etc/sway/config
+# Emergency kill script (only one we keep)
+COPY --chown=steam:steam steamtools/kill-steam.sh /usr/local/bin/kill-steam.sh
 
-# Recovery toolbar scripts. Installed under /usr/local/lib (NOT $HOME) so the
-# /home/steam bind mount cannot shadow them; the entrypoint copies them into
-# $HOME/steamtools on boot. See steamtools/README for usage.
-COPY --chown=steam:steam steamtools/ /usr/local/lib/steamtools/
-
-# Waybar config + CSS for the recovery toolbar (seeded into $HOME/.config/waybar
-# on boot by the entrypoint; same "copy only if missing" rule as steamtools).
-COPY --chown=steam:steam waybar/ /usr/local/lib/steamos-waybar/
-
-# VirtualHere USB client — lets controllers plugged into the Moonlight client
-# (Mac) appear as real USB devices in this container (needs the vhci_hcd kernel
-# module on the host). Connect it by setting VH_SERVER=<ip> in the container env.
+# VirtualHere USB client
 RUN wget -q -O /usr/local/bin/vhclient https://www.virtualhere.com/sites/default/files/usbclient/vhclientx86_64 && \
     chmod +x /usr/local/bin/vhclient
 
 USER ${USER}
 WORKDIR ${HOME}
 
-# 5. SteamOS Environment Variables
 ENV XDG_RUNTIME_DIR=/tmp/runtime-steam
 ENV STEAM_FRAME_RATE_LIMIT=0
 

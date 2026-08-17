@@ -216,28 +216,71 @@ PYEOF
 fi
 
 echo "=== [SteamOS] Starting input device hotplug watcher ==="
+# Sunshine creates uinput devices in the kernel, but in a Docker container
+# the host's udevd (not ours) receives the uevent, so /dev/input/event* nodes
+# are never created. We must mknod them ourselves by reading sysfs uevent files.
+create_missing_devnodes() {
+  # Create /dev/input/event* nodes from sysfs
+  for sysdev in /sys/class/input/event*; do
+    [ -d "$sysdev" ] || continue
+    devname=$(basename "$sysdev")
+    [ -e "/dev/input/$devname" ] && continue
+    uevent="$sysdev/uevent"
+    [ -f "$uevent" ] || continue
+    MAJOR=$(sed -n 's/^MAJOR=//p' "$uevent")
+    MINOR=$(sed -n 's/^MINOR=//p' "$uevent")
+    [ -n "$MAJOR" ] && [ -n "$MINOR" ] || continue
+    echo "[$(date +%H:%M:%S)] mknod /dev/input/$devname c $MAJOR $MINOR"
+    sudo mknod "/dev/input/$devname" c "$MAJOR" "$MINOR" 2>/dev/null || true
+    sudo chmod 666 "/dev/input/$devname" 2>/dev/null || true
+  done
+  # Create /dev/input/mouse* nodes from sysfs
+  for sysdev in /sys/class/input/mouse*; do
+    [ -d "$sysdev" ] || continue
+    devname=$(basename "$sysdev")
+    [ -e "/dev/input/$devname" ] && continue
+    uevent="$sysdev/uevent"
+    [ -f "$uevent" ] || continue
+    MAJOR=$(sed -n 's/^MAJOR=//p' "$uevent")
+    MINOR=$(sed -n 's/^MINOR=//p' "$uevent")
+    [ -n "$MAJOR" ] && [ -n "$MINOR" ] || continue
+    echo "[$(date +%H:%M:%S)] mknod /dev/input/$devname c $MAJOR $MINOR"
+    sudo mknod "/dev/input/$devname" c "$MAJOR" "$MINOR" 2>/dev/null || true
+    sudo chmod 666 "/dev/input/$devname" 2>/dev/null || true
+  done
+  # Create /dev/input/js* nodes from sysfs
+  for sysdev in /sys/class/input/js*; do
+    [ -d "$sysdev" ] || continue
+    devname=$(basename "$sysdev")
+    [ -e "/dev/input/$devname" ] && continue
+    uevent="$sysdev/uevent"
+    [ -f "$uevent" ] || continue
+    MAJOR=$(sed -n 's/^MAJOR=//p' "$uevent")
+    MINOR=$(sed -n 's/^MINOR=//p' "$uevent")
+    [ -n "$MAJOR" ] && [ -n "$MINOR" ] || continue
+    echo "[$(date +%H:%M:%S)] mknod /dev/input/$devname c $MAJOR $MINOR"
+    sudo mknod "/dev/input/$devname" c "$MAJOR" "$MINOR" 2>/dev/null || true
+    sudo chmod 666 "/dev/input/$devname" 2>/dev/null || true
+  done
+}
+
 (
   LAST_COUNT=0
   while true; do
+    # Create any missing device nodes
+    create_missing_devnodes
     # Count current input devices
     CURR_COUNT=$(ls /dev/input/event* 2>/dev/null | wc -l)
     if [ "$CURR_COUNT" -ne "$LAST_COUNT" ]; then
-      echo "[$(date +%H:%M:%S)] Input devices: $LAST_COUNT -> $CURR_COUNT"
+      echo "[$(date +%H:%M:%S)] Input event devices: $LAST_COUNT -> $CURR_COUNT"
       LAST_COUNT=$CURR_COUNT
+      # Trigger udev so libinput picks up new devices with ID_INPUT_* tags
+      sudo udevadm trigger --subsystem-match=input 2>/dev/null || true
     fi
-    # Fix permissions on any new or existing devices
-    for dev in /dev/input/event* /dev/input/js*; do
-      [ -e "$dev" ] || continue
-      PERM=$(stat -c '%a' "$dev" 2>/dev/null)
-      [ "$PERM" = "666" ] && continue
-      sudo chmod 666 "$dev" 2>/dev/null || true
-    done
     # Keep /dev/uinput and /dev/uhid accessible
     sudo chmod 666 /dev/uinput 2>/dev/null || true
     sudo chmod 666 /dev/uhid 2>/dev/null || true
-    # Trigger udev so libinput picks up any new devices with proper ID_INPUT_* tags
-    sudo udevadm trigger --subsystem-match=input 2>/dev/null || true
-    sleep 2
+    sleep 1
   done
 ) &
 
@@ -263,15 +306,12 @@ start_sunshine() {
 
 start_sunshine
 
-# After Sunshine starts, give it a moment then re-trigger udev to catch any
-# virtual input devices it creates on startup
+# After Sunshine starts, give it a moment then create any missing device nodes
+# and trigger udev so libinput picks them up
 sleep 3
+create_missing_devnodes
 sudo udevadm trigger --subsystem-match=input 2>/dev/null || true
 sudo udevadm settle --timeout=5 2>/dev/null || true
-# Fix permissions on any new virtual input devices
-for dev in /dev/input/event* /dev/input/js*; do
-  [ -e "$dev" ] && sudo chmod 666 "$dev" 2>/dev/null || true
-done
 sudo chmod 666 /dev/uinput 2>/dev/null || true
 
 # Sunshine supervisor

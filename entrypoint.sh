@@ -32,22 +32,51 @@ sudo -u "$USER_NAME" env DBUS_SESSION_BUS_ADDRESS="$DBUS_SESSION_BUS_ADDRESS" \
   dbus-daemon --session --address="$DBUS_SESSION_BUS_ADDRESS" --nofork >/tmp/dbus-session.log 2>&1 &
 
 echo "=== [SteamOS] Granting device access ==="
-sudo chmod 666 /dev/uinput 2>/dev/null || true
 sudo chmod 666 /dev/dri/* 2>/dev/null || true
-sudo chmod 666 /dev/input/* 2>/dev/null || true
+
+echo "=== [SteamOS] Writing udev rules for Sunshine input ==="
+sudo mkdir -p /etc/udev/rules.d
+sudo tee /etc/udev/rules.d/99-sunshine-input.rules >/dev/null <<'RULES'
+# Sunshine/inputtino virtual devices (vendor 0x3434 = 13364 decimal)
+# Match all Sunshine virtual devices by vendor ID
+ACTION=="add|change", SUBSYSTEM=="input", ATTRS{vendor}=="13364", ENV{ID_INPUT}="1", MODE="0666"
+
+# Keyboard passthrough
+ACTION=="add|change", SUBSYSTEM=="input", ATTRS{name}=="Keyboard passthrough", ENV{ID_INPUT}="1", ENV{ID_INPUT_KEYBOARD}="1", ENV{ID_INPUT_KEY}="1", MODE="0666"
+
+# Mouse passthrough (relative)
+ACTION=="add|change", SUBSYSTEM=="input", ATTRS{name}=="Mouse passthrough", ENV{ID_INPUT}="1", ENV{ID_INPUT_POINTER}="1", MODE="0666"
+
+# Mouse passthrough (absolute)
+ACTION=="add|change", SUBSYSTEM=="input", ATTRS{name}=="Mouse passthrough (absolute)", ENV{ID_INPUT}="1", ENV{ID_INPUT_POINTER}="1", MODE="0666"
+
+# Touch passthrough
+ACTION=="add|change", SUBSYSTEM=="input", ATTRS{name}=="Touch passthrough", ENV{ID_INPUT}="1", ENV{ID_INPUT_POINTER}="1", MODE="0666"
+
+# Pen passthrough
+ACTION=="add|change", SUBSYSTEM=="input", ATTRS{name}=="Pen passthrough", ENV{ID_INPUT}="1", ENV{ID_INPUT_POINTER}="1", MODE="0666"
+
+# Xbox gamepad
+ACTION=="add|change", SUBSYSTEM=="input", ATTRS{name}=="Sunshine X-Box One*", ENV{ID_INPUT}="1", ENV{ID_INPUT_JOYSTICK}="1", MODE="0666"
+
+# uinput device — Sunshine needs write access to create virtual devices
+KERNEL=="uinput", SUBSYSTEM=="misc", OPTIONS+="static_node=uinput", MODE="0660", GROUP="input"
+
+# uhid device — needed for DS5/DualSense gamepad emulation
+KERNEL=="uhid", MODE="0660", GROUP="input"
+
+# Joystick devices
+KERNEL=="js[0-9]*", MODE="0666"
+RULES
 
 echo "=== [SteamOS] Starting udevd ==="
-sudo mkdir -p /etc/udev/rules.d
-cat > /tmp/99-sunshine-input.rules <<'RULES'
-# Sunshine virtual input devices — set world-accessible permissions
-SUBSYSTEM=="input", MODE="0666"
-KERNEL=="js[0-9]*", MODE="0666"
-ACTION=="add", SUBSYSTEM=="input", RUN+="/bin/sh -c 'udevadm trigger --subsystem-match=input'"
-RULES
-sudo cp /tmp/99-sunshine-input.rules /etc/udev/rules.d/99-sunshine-input.rules
 sudo /usr/lib/systemd/systemd-udevd --daemon 2>/dev/null || true
+# Apply rules to existing devices (host input devices)
 sudo udevadm trigger --subsystem-match=input 2>/dev/null || true
-sudo udevadm settle 2>/dev/null || true
+sudo udevadm settle --timeout=5 2>/dev/null || true
+# Ensure /dev/uinput and /dev/uhid are accessible after udevd applies rules
+sudo chmod 666 /dev/uinput 2>/dev/null || true
+sudo chmod 666 /dev/uhid 2>/dev/null || true
 
 echo "=== [SteamOS] Configuring PipeWire ==="
 mkdir -p "$HOME/.config/pipewire/pipewire.conf.d"
@@ -156,8 +185,17 @@ capture = wlr
 encoder = vaapi
 adapter_name = /dev/dri/renderD128
 audio_sink = sunshine-null
+keyboard = enabled
+mouse = enabled
+gamepad = auto
 EOF
-  echo "Wrote Sunshine config (wlr capture, CSRF origin https://${LAN_IP}:47990)"
+  echo "Wrote Sunshine config (wlr capture, input enabled, CSRF origin https://${LAN_IP}:47990)"
+fi
+# Ensure input settings are always present (safe to add to existing config)
+if [ -f "$SUNCONF" ]; then
+  grep -q "^keyboard" "$SUNCONF" || echo "keyboard = enabled" >> "$SUNCONF"
+  grep -q "^mouse" "$SUNCONF" || echo "mouse = enabled" >> "$SUNCONF"
+  grep -q "^gamepad" "$SUNCONF" || echo "gamepad = auto" >> "$SUNCONF"
 fi
 
 APPS="$HOME/.config/sunshine/apps.json"
@@ -179,15 +217,25 @@ fi
 
 echo "=== [SteamOS] Starting input device hotplug watcher ==="
 (
+  LAST_COUNT=0
   while true; do
+    # Count current input devices
+    CURR_COUNT=$(ls /dev/input/event* 2>/dev/null | wc -l)
+    if [ "$CURR_COUNT" -ne "$LAST_COUNT" ]; then
+      echo "[$(date +%H:%M:%S)] Input devices: $LAST_COUNT -> $CURR_COUNT"
+      LAST_COUNT=$CURR_COUNT
+    fi
+    # Fix permissions on any new or existing devices
     for dev in /dev/input/event* /dev/input/js*; do
       [ -e "$dev" ] || continue
       PERM=$(stat -c '%a' "$dev" 2>/dev/null)
       [ "$PERM" = "666" ] && continue
-      echo "[$(date +%H:%M:%S)] New input device: $dev (fixing permissions)"
       sudo chmod 666 "$dev" 2>/dev/null || true
     done
-    # Trigger udev so libinput picks up any new devices
+    # Keep /dev/uinput and /dev/uhid accessible
+    sudo chmod 666 /dev/uinput 2>/dev/null || true
+    sudo chmod 666 /dev/uhid 2>/dev/null || true
+    # Trigger udev so libinput picks up any new devices with proper ID_INPUT_* tags
     sudo udevadm trigger --subsystem-match=input 2>/dev/null || true
     sleep 2
   done
@@ -214,6 +262,17 @@ start_sunshine() {
 }
 
 start_sunshine
+
+# After Sunshine starts, give it a moment then re-trigger udev to catch any
+# virtual input devices it creates on startup
+sleep 3
+sudo udevadm trigger --subsystem-match=input 2>/dev/null || true
+sudo udevadm settle --timeout=5 2>/dev/null || true
+# Fix permissions on any new virtual input devices
+for dev in /dev/input/event* /dev/input/js*; do
+  [ -e "$dev" ] && sudo chmod 666 "$dev" 2>/dev/null || true
+done
+sudo chmod 666 /dev/uinput 2>/dev/null || true
 
 # Sunshine supervisor
 (

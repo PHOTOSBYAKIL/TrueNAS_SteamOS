@@ -107,8 +107,6 @@ XDG_SESSION_DESKTOP=gamescope
 HOME=$HOME
 DBUS_SESSION_BUS_ADDRESS=$DBUS_SESSION_BUS_ADDRESS
 PIPEWIRE_RUNTIME_DIR=$XDG_RUNTIME_DIR/pipewire
-WLR_BACKENDS=headless,libinput
-WLR_LIBINPUT_NO_DEVICES=1
 DISPLAY=:0"
 
 # Gamescope -e: embedded mode (DRM/KMS, takes over the virtual display).

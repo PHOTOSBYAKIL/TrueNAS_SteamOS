@@ -113,7 +113,7 @@ DISPLAY=:0"
 # Gamescope creates its own Wayland display + Xwayland for Steam.
 # Steam is launched as the child process after '--'.
 sudo -u "$USER_NAME" env $GAMESCOPE_ENV \
-  gamescope -e -W 1920 -H 1080 -r 60 --force-grab-cursor -- steam -tenfoot -silent \
+  gamescope --backend headless -W 1920 -H 1080 -r 60 -- steam -tenfoot -silent \
   >/tmp/gamescope.log 2>&1 &
 GAMESCOPE_PID=$!
 
@@ -154,14 +154,14 @@ echo "=== [SteamOS] Gamescope supervisor ==="
 
 echo "=== [SteamOS] Seeding Sunshine config ==="
 SUNCONF="$HOME/.config/sunshine/sunshine.conf"
-if [ ! -s "$SUNCONF" ] || ! grep -q "capture = wlr" "$SUNCONF"; then
+if [ ! -s "$SUNCONF" ] || ! grep -q "capture = pipewire" "$SUNCONF"; then
   LAN_IP=$(ip route get 1.1.1.1 2>/dev/null | sed -n 's/.*src \([0-9.]*\).*/\1/p' | head -1)
   [ -z "$LAN_IP" ] && LAN_IP=$(hostname -I 2>/dev/null | awk '{print $1}')
   mkdir -p "$(dirname "$SUNCONF")"
   cat > "$SUNCONF" <<EOF
 origin_web_ui_allowed = lan
 csrf_allowed_origins = https://${LAN_IP}:47990
-capture = wlr
+capture = pipewire
 encoder = vaapi
 adapter_name = /dev/dri/renderD128
 audio_sink = sunshine-null

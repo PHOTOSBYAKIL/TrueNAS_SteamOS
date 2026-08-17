@@ -142,7 +142,7 @@ echo "=== [SteamOS] Gamescope supervisor ==="
 (
   while true; do
     sleep 10
-    if ! pgrep -x gamescope >/dev/null 2>&1; then
+    if ! pgrep -f "gamescope.*--backend" >/dev/null 2>&1; then
       echo "[$(date +%H:%M:%S)] gamescope died — restarting container"
       pkill -TERM -x steam 2>/dev/null
       sleep 5

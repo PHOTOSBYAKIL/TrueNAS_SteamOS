@@ -75,12 +75,15 @@ RULES
 echo "=== [SteamOS] Starting udevd ==="
 sudo /usr/lib/systemd/systemd-udevd --daemon 2>/dev/null || true
 sudo udevadm control --reload-rules 2>/dev/null || true
+# Apply rules to existing devices — only trigger our container's udevd
+# for initial ID_INPUT_* tag setup on existing host devices
 sudo udevadm trigger --subsystem-match=input 2>/dev/null || true
 sudo udevadm settle --timeout=5 2>/dev/null || true
-# Ensure /dev/uinput is accessible (Sunshine needs write access to create virtual devices)
-# Use 0666 as safety net — in Docker containers, group resolution via sudo -u can be unreliable
+# Ensure /dev/uinput is writable (Sunshine needs write access)
 sudo chmod 0666 /dev/uinput 2>/dev/null || true
 sudo chmod 0666 /dev/uhid 2>/dev/null || true
+# Fix permissions on existing input devices (host GID mismatch)
+sudo chmod 666 /dev/input/event* /dev/input/js* /dev/input/mouse* 2>/dev/null || true
 
 echo "=== [SteamOS] Configuring PipeWire ==="
 mkdir -p "$HOME/.config/pipewire/pipewire.conf.d"
@@ -226,14 +229,12 @@ echo "=== [SteamOS] Starting input device watcher ==="
 # with its own GID (105 on this host) which doesn't match our container's
 # input group (992). We must chmod ALL devices every cycle to ensure the
 # steam user can always access them regardless of host GID mismatch.
+# Do NOT run udevadm trigger here — it causes the host udevd to reprocess
+# events and reset permissions back to 0660.
 (
   while true; do
-    # Continuously chmod all input devices (host GID mismatch means
-    # 0660 root:105 blocks our steam user even though it's in "input")
     chmod 666 /dev/input/event* /dev/input/js* /dev/input/mouse* 2>/dev/null || true
-    # Trigger udev so libinput picks up devices with ID_INPUT_* tags
-    udevadm trigger --subsystem-match=input 2>/dev/null || true
-    sleep 2
+    sleep 1
   done
 ) &
 
@@ -259,10 +260,9 @@ start_sunshine() {
 
 start_sunshine
 
-# After Sunshine starts, trigger udev once for any devices it created
+# After Sunshine starts, chmod any devices that already exist
 sleep 3
-chmod 666 /dev/input/event* /dev/input/js* 2>/dev/null || true
-udevadm trigger --subsystem-match=input 2>/dev/null || true
+chmod 666 /dev/input/event* /dev/input/js* /dev/input/mouse* 2>/dev/null || true
 
 # Sunshine supervisor
 (

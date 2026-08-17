@@ -77,9 +77,9 @@ sudo /usr/lib/systemd/systemd-udevd --daemon 2>/dev/null || true
 sudo udevadm control --reload-rules 2>/dev/null || true
 sudo udevadm trigger --subsystem-match=input 2>/dev/null || true
 sudo udevadm settle --timeout=5 2>/dev/null || true
-# Ensure /dev/uinput is accessible (Sunshine needs this before creating virtual devices)
-sudo chmod 0660 /dev/uinput 2>/dev/null || true
-sudo chown root:input /dev/uinput 2>/dev/null || true
+# Ensure /dev/uinput is accessible (Sunshine needs write access to create virtual devices)
+# Use 0666 as safety net — in Docker containers, group resolution via sudo -u can be unreliable
+sudo chmod 0666 /dev/uinput 2>/dev/null || true
 sudo chmod 0666 /dev/uhid 2>/dev/null || true
 
 echo "=== [SteamOS] Configuring PipeWire ==="
@@ -234,6 +234,8 @@ echo "=== [SteamOS] Starting input device watcher ==="
       LAST_COUNT=$CURR_COUNT
       # Ensure all input devices are accessible
       chmod 666 /dev/input/event* /dev/input/js* 2>/dev/null || true
+      # Keep /dev/uinput writable (udevd may reset permissions)
+      chmod 666 /dev/uinput 2>/dev/null || true
       # Trigger udev so libinput picks up devices with ID_INPUT_* tags
       udevadm trigger --subsystem-match=input 2>/dev/null || true
     fi

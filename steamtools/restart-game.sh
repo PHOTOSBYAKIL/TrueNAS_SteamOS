@@ -15,4 +15,6 @@ fi
 
 kill_tree "$PID"
 echo "$(date) restart-game: force-closed pid $PID (back to Steam)" >> "$LOG"
+sleep 0.3
+swaymsg workspace 1
 exit 0

@@ -25,6 +25,7 @@ swaymsg kill >/dev/null 2>&1
 for _ in $(seq 1 10); do
   if ! kill -0 "$PID" 2>/dev/null; then
     echo "$(date) close-game: closed gracefully (pid $PID)" >> "$LOG"
+    swaymsg workspace 1
     exit 0
   fi
   sleep 1
@@ -32,4 +33,5 @@ done
 
 echo "$(date) close-game: window closed but pid $PID still alive — force-killing tree" >> "$LOG"
 kill_tree "$PID"
+swaymsg workspace 1
 exit 0

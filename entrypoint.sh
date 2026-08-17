@@ -36,6 +36,19 @@ sudo chmod 666 /dev/uinput 2>/dev/null || true
 sudo chmod 666 /dev/dri/* 2>/dev/null || true
 sudo chmod 666 /dev/input/* 2>/dev/null || true
 
+echo "=== [SteamOS] Starting udevd ==="
+sudo mkdir -p /etc/udev/rules.d
+cat > /tmp/99-sunshine-input.rules <<'RULES'
+# Sunshine virtual input devices — set world-accessible permissions
+SUBSYSTEM=="input", MODE="0666"
+KERNEL=="js[0-9]*", MODE="0666"
+ACTION=="add", SUBSYSTEM=="input", RUN+="/bin/sh -c 'udevadm trigger --subsystem-match=input'"
+RULES
+sudo cp /tmp/99-sunshine-input.rules /etc/udev/rules.d/99-sunshine-input.rules
+sudo /usr/lib/systemd/systemd-udevd --daemon 2>/dev/null || true
+sudo udevadm trigger --subsystem-match=input 2>/dev/null || true
+sudo udevadm settle 2>/dev/null || true
+
 echo "=== [SteamOS] Configuring PipeWire ==="
 mkdir -p "$HOME/.config/pipewire/pipewire.conf.d"
 cat > "$HOME/.config/pipewire/pipewire.conf.d/10-sunshine-null.conf" <<'PWEOF'
@@ -163,6 +176,22 @@ json.dump(data, open(p, "w"), indent=4)
 PYEOF
   echo "Healed Sunshine apps.json"
 fi
+
+echo "=== [SteamOS] Starting input device hotplug watcher ==="
+(
+  while true; do
+    for dev in /dev/input/event* /dev/input/js*; do
+      [ -e "$dev" ] || continue
+      PERM=$(stat -c '%a' "$dev" 2>/dev/null)
+      [ "$PERM" = "666" ] && continue
+      echo "[$(date +%H:%M:%S)] New input device: $dev (fixing permissions)"
+      sudo chmod 666 "$dev" 2>/dev/null || true
+    done
+    # Trigger udev so libinput picks up any new devices
+    sudo udevadm trigger --subsystem-match=input 2>/dev/null || true
+    sleep 2
+  done
+) &
 
 echo "=== [SteamOS] Starting Sunshine ==="
 start_sunshine() {

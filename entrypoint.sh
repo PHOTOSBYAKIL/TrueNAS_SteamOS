@@ -1,13 +1,9 @@
 #!/bin/bash
 set -o pipefail
 
-# TrueNAS_SteamOS — headless gamescope streaming container.
-# Runs: D-Bus -> NetworkManager -> PipeWire -> seatd -> gamescope (-e, DRM)
+# TrueNAS_SteamOS — minimal headless sway streaming container.
+# Runs: D-Bus -> NetworkManager -> PipeWire -> seatd -> sway (headless)
 #       -> Steam Big Picture -> Sunshine (wlr-screencopy, VA-API encode).
-#
-# Gamescope IS the session compositor (same as Steam Deck). It manages the
-# game lifecycle — launch, focus, close, overlay. No workspace tricks or
-# focus hacks needed.
 #
 # Requires host kernel param: amdgpu.virtual_display=desc:1920x1080
 
@@ -23,7 +19,7 @@ sudo chown -R "${PUID}:${PGID}" "$XDG_RUNTIME_DIR" 2>/dev/null || true
 sudo chmod 0700 "$XDG_RUNTIME_DIR" 2>/dev/null || true
 chown -R "${PUID}:${PGID}" "$HOME" 2>/dev/null || true
 
-echo "=== [SteamOS] Starting system services (D-Bus + NetworkManager) ==="
+echo "=== [SteamOS] Starting D-Bus + NetworkManager ==="
 sudo dbus-uuidgen --ensure 2>/dev/null || true
 sudo mkdir -p /run/dbus
 sudo dbus-daemon --system --fork
@@ -92,32 +88,25 @@ echo "=== [SteamOS] Starting seatd ==="
 sudo seatd -g video >/tmp/seatd.log 2>&1 &
 sleep 1
 
-echo "=== [SteamOS] Starting gamescope ==="
-# Gamescope is the session compositor (same as Steam Deck).
-# -e = embedded mode, takes over display via DRM/KMS
-# --force-grab-cursor = games that need cursor capture work correctly
-# Steam is a child process of gamescope — it manages the lifecycle.
+echo "=== [SteamOS] Starting sway ==="
 sudo rm -f "$XDG_RUNTIME_DIR"/wayland-* "$XDG_RUNTIME_DIR"/sway-ipc* 2>/dev/null || true
 sudo rm -f /tmp/.X11-unix/X* /tmp/.X*-lock 2>/dev/null || true
 
-GAMESCOPE_ENV="XDG_RUNTIME_DIR=$XDG_RUNTIME_DIR
+SWAY_ENV="XDG_RUNTIME_DIR=$XDG_RUNTIME_DIR
 XDG_SESSION_TYPE=wayland
-XDG_CURRENT_DESKTOP=gamescope
-XDG_SESSION_DESKTOP=gamescope
+XDG_CURRENT_DESKTOP=sway
+XDG_SESSION_DESKTOP=sway
 HOME=$HOME
 DBUS_SESSION_BUS_ADDRESS=$DBUS_SESSION_BUS_ADDRESS
 PIPEWIRE_RUNTIME_DIR=$XDG_RUNTIME_DIR/pipewire
-DISPLAY=:0"
+WLR_BACKENDS=headless,libinput
+WLR_LIBINPUT_NO_DEVICES=1
+SWAYSOCK=$XDG_RUNTIME_DIR/sway-ipc.sock"
 
-# Gamescope -e: embedded mode (DRM/KMS, takes over the virtual display).
-# Gamescope creates its own Wayland display + Xwayland for Steam.
-# Steam is launched as the child process after '--'.
-sudo -u "$USER_NAME" env $GAMESCOPE_ENV \
-  gamescope --backend headless -W 1920 -H 1080 -r 60 -- steam -tenfoot -silent \
-  >/tmp/gamescope.log 2>&1 &
-GAMESCOPE_PID=$!
+sudo -u "$USER_NAME" env $SWAY_ENV sway -c /etc/sway/config \
+  >/tmp/sway.log 2>&1 &
+SWAY_PID=$!
 
-# Wait for gamescope to expose its Wayland display
 WAYLAND_DISPLAY=""
 for i in $(seq 1 30); do
   WAYLAND_DISPLAY=$(basename "$(ls "$XDG_RUNTIME_DIR"/wayland-* 2>/dev/null | grep -v '\.lock$' | head -1)" 2>/dev/null)
@@ -126,42 +115,31 @@ for i in $(seq 1 30); do
 done
 export WAYLAND_DISPLAY
 if [ -z "$WAYLAND_DISPLAY" ]; then
-  echo "WARNING: gamescope did not expose a Wayland display after 30s" >&2
-  tail -20 /tmp/gamescope.log >&2 || true
+  echo "WARNING: sway did not expose a Wayland display socket after 30s" >&2
+  tail -20 /tmp/sway.log >&2 || true
 else
-  echo "gamescope ready on WAYLAND_DISPLAY=${WAYLAND_DISPLAY}"
+  echo "sway ready on WAYLAND_DISPLAY=${WAYLAND_DISPLAY}"
 fi
 
-export DISPLAY=":0"
-echo "DISPLAY=${DISPLAY} (gamescope manages Xwayland internally)"
-
-echo "=== [SteamOS] Gamescope supervisor ==="
-# If gamescope dies, kill the entrypoint to trigger container restart.
-# Only kill processes named exactly 'steam' (not gamescope which contains
-# 'steam' in its argument string from the 'gamescope -- steam' command).
-(
-  while true; do
-    sleep 10
-    if ! pgrep -f "gamescope.*--backend" >/dev/null 2>&1; then
-      echo "[$(date +%H:%M:%S)] gamescope died — restarting container"
-      pkill -TERM -x steam 2>/dev/null
-      sleep 5
-      pkill -KILL -x steam 2>/dev/null
-      exit 0
-    fi
-  done
-) &
+X_DISPLAY=""
+for i in $(seq 1 10); do
+  X_DISPLAY=$(ls /tmp/.X11-unix/ 2>/dev/null | grep -E '^X[0-9]+$' | sed 's/^X//' | sort -n | head -1)
+  [ -n "$X_DISPLAY" ] && break
+  sleep 1
+done
+export DISPLAY=":${X_DISPLAY:-0}"
+echo "XWayland ready on DISPLAY=${DISPLAY}"
 
 echo "=== [SteamOS] Seeding Sunshine config ==="
 SUNCONF="$HOME/.config/sunshine/sunshine.conf"
-if [ ! -s "$SUNCONF" ] || ! grep -q "capture = pipewire" "$SUNCONF"; then
+if [ ! -s "$SUNCONF" ] || ! grep -q "capture = wlr" "$SUNCONF"; then
   LAN_IP=$(ip route get 1.1.1.1 2>/dev/null | sed -n 's/.*src \([0-9.]*\).*/\1/p' | head -1)
   [ -z "$LAN_IP" ] && LAN_IP=$(hostname -I 2>/dev/null | awk '{print $1}')
   mkdir -p "$(dirname "$SUNCONF")"
   cat > "$SUNCONF" <<EOF
 origin_web_ui_allowed = lan
 csrf_allowed_origins = https://${LAN_IP}:47990
-capture = pipewire
+capture = wlr
 encoder = vaapi
 adapter_name = /dev/dri/renderD128
 audio_sink = sunshine-null
@@ -183,10 +161,10 @@ if "apps" not in data:
     data["apps"] = []
 json.dump(data, open(p, "w"), indent=4)
 PYEOF
-  echo "Healed Sunshine apps.json (ensured apps + env keys)"
+  echo "Healed Sunshine apps.json"
 fi
 
-echo "=== [SteamOS] Starting Sunshine (wlr capture) ==="
+echo "=== [SteamOS] Starting Sunshine ==="
 start_sunshine() {
   local d="" i
   for i in $(seq 1 30); do
@@ -247,19 +225,18 @@ if [ -n "${VH_SERVER:-}" ]; then
   echo "VirtualHere client connecting to ${VH_SERVER}"
 fi
 
-echo "=== [SteamOS] Audio supervisor ==="
-(
-  export PULSE_SERVER=unix:"$XDG_RUNTIME_DIR"/pulse/native
-  while true; do
-    sleep 3
-    if [ "$(pactl get-default-sink 2>/dev/null)" != "sunshine-null" ]; then
-      pactl set-default-sink sunshine-null 2>/dev/null || true
-    fi
-  done
-) &
+echo "=== [SteamOS] Launching Steam Big Picture ==="
+for i in $(seq 1 30); do
+  [ -S /tmp/.X11-unix/X"${DISPLAY#:}" ] && break
+  sleep 1
+done
+[ -S /tmp/.X11-unix/X"${DISPLAY#:}" ] || echo "WARNING: X socket ${DISPLAY} not ready after 30s" >&2
+sudo -u "$USER_NAME" env XDG_RUNTIME_DIR="$XDG_RUNTIME_DIR" HOME="$HOME" \
+  WAYLAND_DISPLAY="$WAYLAND_DISPLAY" DISPLAY="$DISPLAY" \
+  DBUS_SESSION_BUS_ADDRESS="$DBUS_SESSION_BUS_ADDRESS" \
+  PIPEWIRE_RUNTIME_DIR="$XDG_RUNTIME_DIR/pipewire" \
+  STEAM_USE_DYNAMIC_VK=1 \
+  dbus-run-session -- steam -tenfoot -silent "$@" >/tmp/steam.log 2>&1
 
-echo "=== [SteamOS] Waiting for gamescope to exit ==="
-wait $GAMESCOPE_PID 2>/dev/null
-
-echo "=== [SteamOS] Gamescope exited — stopping container ==="
+echo "=== [SteamOS] Steam exited — stopping container ==="
 exit 0

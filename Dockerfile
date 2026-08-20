@@ -11,6 +11,15 @@ FROM archlinux:latest
 RUN echo -e "\n[multilib]\nInclude = /etc/pacman.d/mirrorlist" >> /etc/pacman.conf && \
     echo -e "\n[lizardbyte]\nSigLevel = Optional\nServer = https://github.com/LizardByte/pacman-repo/releases/latest/download" >> /etc/pacman.conf
 
+# Add CachyOS repo for chwd (CachyOS Hardware Detection)
+RUN pacman-key --init && \
+    pacman-key --recv-keys F3B607488DB35A47 --keyserver keyserver.ubuntu.com && \
+    pacman-key --lsign-key F3B607488DB35A47 && \
+    pacman -U --noconfirm \
+      'https://mirror.cachyos.org/repo/x86_64/cachyos/cachyos-keyring-20240331-1-any.pkg.tar.zst' \
+      'https://mirror.cachyos.org/repo/x86_64/cachyos/cachyos-mirrorlist-27-1-any.pkg.tar.zst' && \
+    echo -e "\n[cachyos]\nInclude = /etc/pacman.d/cachyos-mirrorlist" >> /etc/pacman.conf
+
 RUN pacman -Syu --noconfirm && \
     pacman -S --noconfirm \
     base-devel \
@@ -46,6 +55,7 @@ RUN pacman -Syu --noconfirm && \
     libva-utils \
     vulkan-tools \
     mesa-utils \
+    chwd \
     && pacman -Scc --noconfirm
 
 ENV USER=steam

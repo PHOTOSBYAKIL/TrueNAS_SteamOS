@@ -85,6 +85,25 @@ sudo chmod 0666 /dev/uhid 2>/dev/null || true
 # Fix permissions on existing input devices (host GID mismatch)
 sudo chmod 666 /dev/input/event* /dev/input/js* /dev/input/mouse* 2>/dev/null || true
 
+echo "=== [SteamOS] Auto-detecting hardware (chwd) ==="
+if command -v chwd >/dev/null 2>&1; then
+  # Only run chwd on first boot or when hardware changes (skip if already configured)
+  CHWD_STATE="/var/lib/chwd/.steamos-hw-state"
+  CURRENT_HW=$(lspci -nn 2>/dev/null | sort > /tmp/hw-snapshot && md5sum /tmp/hw-snapshot | awk '{print $1}')
+  PREV_HW=""
+  [ -f "$CHWD_STATE" ] && PREV_HW=$(cat "$CHWD_STATE")
+  if [ "$CURRENT_HW" != "$PREV_HW" ]; then
+    echo "Hardware changed or first boot — running chwd -a"
+    chwd -a 2>&1 || echo "chwd autoconfigure failed (non-fatal)"
+    mkdir -p "$(dirname "$CHWD_STATE")"
+    echo "$CURRENT_HW" > "$CHWD_STATE"
+  else
+    echo "Hardware unchanged — skipping chwd"
+  fi
+else
+  echo "chwd not found — skipping hardware auto-detection"
+fi
+
 echo "=== [SteamOS] Configuring PipeWire ==="
 mkdir -p "$HOME/.config/pipewire/pipewire.conf.d"
 cat > "$HOME/.config/pipewire/pipewire.conf.d/10-sunshine-null.conf" <<'PWEOF'

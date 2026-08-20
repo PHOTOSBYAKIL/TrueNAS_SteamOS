@@ -77,6 +77,15 @@ COPY --chown=steam:steam steamtools/kill-steam.sh /usr/local/bin/kill-steam.sh
 RUN wget -q -O /usr/local/bin/vhclient https://www.virtualhere.com/sites/default/files/usbclient/vhclientx86_64 && \
     chmod +x /usr/local/bin/vhclient
 
+# Install GE-Proton (custom Proton build for games needing anti-cheat bypasses, etc.)
+# Place in steam user's compatibilitytools.d — Steam auto-discovers it.
+RUN mkdir -p ${HOME}/.steam/steam/compatibilitytools.d && \
+    wget -q -O /tmp/ge-proton.tar.gz \
+      https://github.com/GloriousEggroll/proton-ge-custom/releases/download/GE-Proton11-5/GE-Proton11-5-x86_64.tar.gz && \
+    tar -xzf /tmp/ge-proton.tar.gz -C ${HOME}/.steam/steam/compatibilitytools.d/ && \
+    rm /tmp/ge-proton.tar.gz && \
+    chown -R ${USER}:${USER} ${HOME}/.steam
+
 USER ${USER}
 WORKDIR ${HOME}
 
